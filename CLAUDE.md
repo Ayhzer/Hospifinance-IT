@@ -13,9 +13,12 @@ The UI language is **French** — all labels, comments, and user-facing strings 
 ## Configuration (where the "specific" lives)
 
 Everything establishment-specific is in **`src/config/`**:
-- `establishment.js` — `ESTABLISHMENT` (name, shortName, department, currency, defaultYear).
-- `sources.js` — `SOURCE_SOFTWARE` (display labels for the orders/payments software, e.g. ex-MAGH2/ex-SAGE).
+- `establishment.js` — `ESTABLISHMENT` (name, shortName, department, currency, defaultYear). Exports `DEFAULT_ESTABLISHMENT` (build-time defaults) merged at module load with any runtime override.
+- `sources.js` — `SOURCE_SOFTWARE` (display labels for the orders/payments software). Same default+override pattern (`DEFAULT_SOURCE_SOFTWARE`).
 - `accounting.js` — `ACCOUNTING` (OPEX/CAPEX account prefixes, `managerFilter`) and `getLineType()`.
+- `runtimeConfig.js` — runtime override layer (localStorage key `hospifinance_app_config`) written by the first-launch wizard, plus `isSetupDone()` gating.
+
+**First-launch wizard.** `components/setup/SetupGate.jsx` (mounted in `main.jsx` inside the providers) shows `SetupWizard.jsx` on a fresh standalone install — 4 steps: establishment identity, source-software labels, data mode (local vs GitHub), admin password. It writes identity/sources to `runtimeConfig`, then **reloads the page** so config read at import time (e.g. `ANNEE_PILOTAGE`, demo EPRD) is recomputed. The wizard is **skipped** when a backend is configured via env (`VITE_API_URL` / `VITE_GITHUB_TOKEN`) or when legacy data already exists, so existing deployments are untouched.
 
 Demo accounts/families/budgets live in `src/constants/analytiqueConstants.js` but are primarily edited in-app (Reclassement, Budget EPRD) and stored in the data repo.
 
@@ -31,7 +34,7 @@ There is **one canonical, header-based import format**, not per-software parsers
 
 The workspace root (`Hospifinance-IT/`) contains two sibling folders:
 - `hospifinance-it/` — the application (this is the real project root; run all commands here)
-- `hospifinance-it-data/` — a sibling repo holding data as JSON (`data/*.json`: users, opex, capex, orders, eprd, reclassement, settings). Ships with a **fictional demo dataset**. The app reads/writes these files via the local API server or the GitHub API when sync is enabled. For real data, use a **private** repo.
+- `hospifinance-it-data/` — a sibling repo holding data as JSON (`data/*.json`: users, opex, opex-orders, capex, capex-orders, eprd, reclassement, settings). Ships with a **fictional demo dataset**. The app reads/writes these files via the local API server or the GitHub API when sync is enabled. For real data, use a **private** repo.
 
 ## Development Commands
 
@@ -119,7 +122,7 @@ Swapping backends only requires changing the service used inside hooks — no co
 - **Imports order**: React → third-party → local contexts → local hooks → local components → utils
 - **Memoization**: `useMemo`/`useCallback` expected on all expensive computations and stable callback references passed as props
 - **Stable filter inputs**: `useTableControls` hook uses `React.memo` and careful closure management to prevent focus loss during multi-character typing — preserve this pattern in table components
-- **No test suite** is configured — manual test cases are in `CAHIER_DE_TESTS.md` and `CAHIER_TESTS_V3.2_COMET.md`
+- **No test suite** is configured — there is no `npm test`. Validate changes manually via the running app
 - **ESLint** enforces React hooks rules and react-refresh warnings; run `npm run lint` before any PR
 - **Dev auto-login**: In localhost/dev mode, authentication is bypassed automatically for faster iteration
 
@@ -132,7 +135,6 @@ See `.env.example`. Key variables:
 ## Existing Documentation
 
 Before modifying core logic, consult:
-- `ARCHITECTURE.md` — detailed component patterns, data flow diagrams, optimization guide
-- `AUTHENTICATION.md` — auth system, role permissions, session handling
-- `ORDERS.md` — order lifecycle and budget impact rules
+- `README.md` — feature overview, setup, and persistence modes
 - `CHANGELOG.md` — version history and breaking changes
+- `backend/README.md` — optional Express/MongoDB API setup (Docker, endpoints)

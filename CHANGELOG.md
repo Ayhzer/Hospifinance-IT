@@ -5,6 +5,48 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 
 ---
 
+## [1.1.0] — 2026-06-26 — Assistant de premier lancement & accompagnement
+
+### ✨ Nouveautés
+- **Assistant de configuration initiale** (`components/setup/SetupWizard.jsx`) affiché
+  automatiquement au premier démarrage d'une installation autonome : identité de
+  l'établissement, libellés des logiciels sources, mode de données (base locale ou
+  synchronisation GitHub) et changement du mot de passe administrateur — **sans éditer
+  le code**.
+- **Fenêtre de bienvenue** (`components/onboarding/WelcomeModal.jsx`) affichée une fois
+  après l'assistant, guidant la première utilisation (importer, budgéter, piloter).
+- **Guide « Premiers pas » complet** (`components/onboarding/GuidePremiersPas.jsx` +
+  `GUIDE_PREMIERS_PAS.md`), rouvrable à tout moment via un **bouton d'aide flottant**.
+- **Bouton « Renseigner le budget »** en haut de la Vue d'ensemble ouvrant l'éditeur
+  EPRD (jusqu'ici inaccessible depuis l'UI). L'éditeur permet désormais d'**ajouter /
+  supprimer** des comptes, avec **persistance localStorage corrigée**.
+
+### 🔗 Réconciliation des comptes (réel ↔ budget EPRD)
+- **Clé compte normalisée** partout (`utils/compte.js` : trim + MAJUSCULES + extraction
+  du code avant un éventuel `CODE|LIBELLÉ`), appliquée à l'import, à la saisie EPRD et à
+  toutes les jointures — élimine les doublons/orphelins dus à un simple écart de casse.
+- **Garde-fou dans l'éditeur EPRD** : autocomplétion des comptes issus de l'import,
+  pré-remplissage du libellé, et alerte si le compte saisi n'existe dans aucun réel.
+- **Détection des comptes orphelins** (anomalies B1/B2) : activité sans budget EPRD,
+  budget EPRD sans activité.
+- **Bandeau de réconciliation** dans « Par comptes » listant les comptes non appariés
+  avec accès direct à la saisie du budget.
+
+### 🐛 Données de démonstration
+- Le budget EPRD de démonstration (`EPRD_STATIC`) n'est plus chargé pour une vraie
+  installation neuve (initialisée via l'assistant) : l'EPRD démarre **vierge**.
+- **Configuration runtime** (`config/runtimeConfig.js`) : surcouche localStorage
+  (`hospifinance_app_config`) fusionnée au chargement par `config/establishment.js` et
+  `config/sources.js` (nouveaux exports `DEFAULT_ESTABLISHMENT` / `DEFAULT_SOURCE_SOFTWARE`).
+- Garde `components/setup/SetupGate.jsx` montée dans `main.jsx`. L'assistant est ignoré
+  si un backend est configuré par variables d'environnement ou si des données existent déjà.
+
+### 📝 Documentation
+- README, CLAUDE.md et CHANGELOG mis à jour ; correction d'incohérences mineures
+  (prérequis Node ≥ 18, chemin `services/importTemplates.js`).
+
+---
+
 ## [1.0.0] — 2026-06-26 — Version générique réutilisable (fork d'Hospifinance HFAR)
 
 Première version **générique** dérivée d'Hospifinance HFAR, adaptable à n'importe quel

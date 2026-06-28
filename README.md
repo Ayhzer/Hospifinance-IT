@@ -16,6 +16,20 @@ projection budgétaire et rapprochement comptable.
 
 ## Adapter l'application à votre établissement
 
+### Le plus simple : l'assistant de premier lancement
+
+Au **tout premier démarrage** d'une installation autonome (`npm run dev`), un
+**assistant de configuration** s'affiche automatiquement et permet de tout régler
+sans toucher au code : identité de l'établissement, libellés des logiciels sources,
+mode de stockage (base locale ou synchronisation GitHub) et mot de passe
+administrateur. Les choix sont enregistrés et appliqués immédiatement (la page se
+recharge une fois). L'assistant ne réapparaît plus ensuite.
+
+> L'assistant est ignoré lorsqu'un backend est déjà configuré par variables
+> d'environnement (mode API ou GitHub) ou si des données existent déjà.
+
+### Manuellement (ou pour modifier les valeurs par défaut au build)
+
 Tout se configure dans **`src/config/`** :
 
 | Fichier | Rôle |
@@ -60,7 +74,7 @@ Parcours utilisateur :
 
 ## Installation locale
 
-**Prérequis** : Node.js ≥ 16, npm
+**Prérequis** : Node.js ≥ 18, npm
 
 ```bash
 git clone https://github.com/Ayhzer/Hospifinance-IT.git

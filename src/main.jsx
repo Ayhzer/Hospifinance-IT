@@ -5,13 +5,16 @@ import './index.css';
 import { AuthProvider } from './contexts/AuthContext';
 import { PermissionsProvider } from './contexts/PermissionsContext';
 import { SettingsProvider } from './contexts/SettingsContext';
+import SetupGate from './components/setup/SetupGate';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <AuthProvider>
       <PermissionsProvider>
         <SettingsProvider>
-          <App />
+          <SetupGate>
+            <App />
+          </SetupGate>
         </SettingsProvider>
       </PermissionsProvider>
     </AuthProvider>

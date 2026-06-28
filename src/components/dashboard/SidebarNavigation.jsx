@@ -33,11 +33,11 @@ export const SECTIONS = [
     label: 'Détails',
     color: 'blue',
     items: [
-      { id: 'opex',        label: 'OPEX par fourniss…', icon: DollarSign },
-      { id: 'capex',       label: 'CAPEX',             icon: Server },
-      { id: 'commandes',   label: 'Détails commandes', icon: ShoppingCart },
-      { id: 'ordersOpex',  label: 'Commandes OPEX',    icon: ShoppingCart },
-      { id: 'ordersCapex', label: 'Commandes CAPEX',   icon: ShoppingCart },
+      { id: 'opex',        label: 'Liste OPEX par fournisseur', icon: DollarSign },
+      { id: 'capex',       label: 'Liste CAPEX par Enveloppe',  icon: Server },
+      { id: 'commandes',   label: 'Détails commandes',          icon: ShoppingCart },
+      { id: 'ordersOpex',  label: 'Saisie des commandes OPEX (si saisie manuelle)',  icon: ShoppingCart },
+      { id: 'ordersCapex', label: 'Saisie des commandes CAPEX (si saisie manuelle)', icon: ShoppingCart },
     ],
   },
   {

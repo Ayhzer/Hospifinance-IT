@@ -4,7 +4,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { DollarSign, Server, FileUp } from 'lucide-react';
+import { DollarSign, Server, FileUp, Wallet } from 'lucide-react';
 import { useDashboardData } from './hooks/useDashboardData';
 import { DashboardBuilder } from './components/dashboard-builder/DashboardBuilder';
 import { CreateDashboardModal } from './components/dashboard-builder/CreateDashboardModal';
@@ -53,8 +53,10 @@ import AnalyseEditeurs from './components/editeurs/AnalyseEditeurs';
 import NoticeVueEnsemble from './components/dashboard/NoticeVueEnsemble';
 import ComparaisonAnnuelle from './components/dashboard/ComparaisonAnnuelle';
 import { EPRD_STATIC } from './constants/analytiqueConstants';
+import { wasSetupViaWizard } from './config/runtimeConfig';
 import { useReclassementData } from './hooks/useReclassementData';
 import { listExercices, suppliersForYear, projectsForYear, ordersForYear } from './utils/yearCalculations';
+import { normalizeCompte } from './utils/compte';
 
 const HospitalITFinanceDashboard = () => {
   const { user, logout, loading: authLoading } = useAuth();
@@ -139,8 +141,32 @@ const HospitalITFinanceDashboard = () => {
     setError: setCapexOrdersError
   } = useOrderData('capex');
 
-  // Données EPRD — initialisées avec les données statiques, enrichies par l'API si disponible
-  const [eprdData, setEprdData] = useState(EPRD_STATIC);
+  // Données EPRD — vierges si l'app a été initialisée via l'assistant (vraie
+  // install neuve), sinon données de démonstration (mode API / découverte).
+  const [eprdData, setEprdData] = useState(() => (wasSetupViaWizard() ? [] : EPRD_STATIC));
+
+  // Persistance centralisée de l'EPRD (corrige la persistance localStorage et
+  // permet l'ajout de comptes depuis l'éditeur).
+  const persistEprd = useCallback((rows) => {
+    setEprdData(rows);
+    try { localStorage.setItem('hospifinance_eprd', JSON.stringify(rows)); } catch (_e) { /* storage indisponible */ }
+  }, []);
+
+  // Comptes présents dans les données importées (réel) — sert de garde-fou à la
+  // saisie EPRD : autocomplétion + alerte si un compte saisi n'a aucun réel.
+  const knownComptes = useMemo(() => {
+    const m = new Map();
+    const add = (compte, libelle) => {
+      const c = normalizeCompte(compte);
+      if (!c) return;
+      const cur = m.get(c);
+      if (!cur) m.set(c, { compte: c, libelle: libelle || '' });
+      else if (libelle && !cur.libelle) cur.libelle = libelle;
+    };
+    suppliers.forEach(s => add(s.compteOrdonnateur, s.libelleCompte || s.category));
+    projects.forEach(p => add(p.compteOrdonnateur, p.libelleCompte));
+    return [...m.values()];
+  }, [suppliers, projects]);
 
   // Mois réalisés — état global partagé entre overview et projection (défaut : année complète)
   const [nbMoisRealises, setNbMoisRealises] = useState(12);
@@ -311,6 +337,14 @@ const HospitalITFinanceDashboard = () => {
 
   // État pour l'éditeur EPRD
   const [showEprdEditor, setShowEprdEditor] = useState(false);
+
+  // Ouverture de l'éditeur de budget EPRD déclenchée depuis l'extérieur
+  // (fenêtre de bienvenue, accompagnement…) via un événement global.
+  useEffect(() => {
+    const openBudget = () => { setActiveTab('overview'); setShowEprdEditor(true); };
+    window.addEventListener('hospifinance:open-budget', openBudget);
+    return () => window.removeEventListener('hospifinance:open-budget', openBudget);
+  }, []);
 
   // État pour l'import des commandes global (page d'accueil)
   const [showSageImport, setShowSageImport] = useState(false);
@@ -581,6 +615,13 @@ const HospitalITFinanceDashboard = () => {
               <div className="flex items-center gap-2">
                 <NoticeVueEnsemble />
                 <button
+                  onClick={() => setShowEprdEditor(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors"
+                >
+                  <Wallet size={16} />
+                  Renseigner le budget
+                </button>
+                <button
                   onClick={() => setShowSageImport(true)}
                   className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors"
                 >
@@ -720,7 +761,7 @@ const HospitalITFinanceDashboard = () => {
 
         {/* Onglet Anomalies */}
         {activeTab === 'anomalies' && (
-          <AnomaliesPanel suppliers={suppliers} orders={opexOrders} eprd={eprdData} />
+          <AnomaliesPanel suppliers={suppliers} orders={opexOrders} eprd={eprdData} projects={projects} />
         )}
 
         {/* Onglet Projection */}
@@ -857,9 +898,9 @@ const HospitalITFinanceDashboard = () => {
         {showEprdEditor && (
           <EprdBudgetEditor
             eprd={eprdData}
-            onUpdated={(compte, budget) => {
-              setEprdData(prev => prev.map(e => e.compteOrdonnateur === compte ? { ...e, budgetEPRD: budget } : e));
-            }}
+            annee={anneeSelectionnee}
+            knownComptes={knownComptes}
+            onChange={persistEprd}
             onClose={() => setShowEprdEditor(false)}
           />
         )}

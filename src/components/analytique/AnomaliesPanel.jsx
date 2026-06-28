@@ -14,14 +14,10 @@ const ROW_BG = {
   [SEVERITE.MOYENNE]:  '',
 };
 
-export default function AnomaliesPanel({ suppliers = [], orders = [], eprd = [] }) {
-  const eprdMap = useMemo(() =>
-    Object.fromEntries(eprd.map(e => [e.compteOrdonnateur, e.budgetEPRD || 0])),
-  [eprd]);
-
+export default function AnomaliesPanel({ suppliers = [], orders = [], eprd = [], projects = [] }) {
   const anomalies = useMemo(() =>
-    detectAllAnomalies(suppliers, orders, eprdMap),
-  [suppliers, orders, eprdMap]);
+    detectAllAnomalies(suppliers, orders, eprd, projects),
+  [suppliers, orders, eprd, projects]);
 
   const counts = useMemo(() => ({
     [SEVERITE.CRITIQUE]: anomalies.filter(a => a.severite === SEVERITE.CRITIQUE).length,
@@ -89,6 +85,8 @@ export default function AnomaliesPanel({ suppliers = [], orders = [], eprd = [] 
         <p><strong>A2</strong> — Taux de réalisation &lt; 20% du budget EPRD → sous-consommation atypique</p>
         <p><strong>A5</strong> — Engagé non reçu &gt; 80% du budget → risque de dépassement à la livraison</p>
         <p><strong>A7</strong> — Achat hors marché &gt; 5 000 € → vérification procédure mise en concurrence</p>
+        <p><strong>B1</strong> — Activité sur un compte sans budget EPRD → réconciliation : budget à renseigner</p>
+        <p><strong>B2</strong> — Budget EPRD sans aucune activité → compte erroné ou dépenses non rattachées</p>
       </div>
     </div>
   );
