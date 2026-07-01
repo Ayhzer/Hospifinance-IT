@@ -401,7 +401,7 @@ export const BudgetCharts = ({
         const age = ref ? daysBetween(ref, asOf) : null;
         return {
           id: o.id,
-          name: o.designation || o.libelle || o.fournisseur || o.supplier || o.numeroCommande || '—',
+          name: o.description || o._supplierName || o.designation || o.libelle || o.fournisseur || o.supplier || o.reference || o.numeroCommande || '—',
           flux: o._flux,
           action: cfg.label,
           badge: cfg.badge,

@@ -30,6 +30,18 @@ There is **one canonical, header-based import format**, not per-software parsers
 - `services/importTemplates.js` — `downloadOrdersTemplate()` / `downloadPaymentsTemplate()` generate a sample `.xlsx` (headers + demo rows + "Notice" sheet).
 - `components/common/ImportModal.jsx` — exposes the "Télécharger le fichier exemple" button and calls `onCommandesImport`.
 
+### Auto-import (watched source file)
+
+Optional, **local-server mode only** (`VITE_API_URL` set). The app watches a configured source file and offers to re-import on launch when a newer version appears:
+- `hooks/useAutoImportWatcher.js` — on mount, polls `GET /auto-import/status`; exposes `pending` when the file signature (name/mtime/size) differs from the last seen/imported.
+- `components/common/AutoImportUpdateModal.jsx` — fetches the file (`GET /auto-import/file`), parses it through `importCommandes` (canonical circuit), and applies the data.
+- `local-server.js` — `autoImportStatus()` + the two `/auto-import/*` routes; the source path/filename come from `settings.autoImport` (configured in Paramètres → « Source automatique »). In browser-only mode the hook is inert.
+
+### Budget editor & nomenclature
+
+- `components/analytique/BudgetEditorModal.jsx` — two-tab modal opened by "Renseigner le budget": OPEX (`EprdBudgetEditor.jsx`, EPRD per ordering account) and CAPEX (`CapexBudgetEditor.jsx`, global-per-year + per-envelope with a non-blocking balance check).
+- `components/reclassement/GestionNomenclature.jsx` — editable analytic **nomenclature** (familles + sous-catégories, Run/Build périmètre). The nomenclature is the source of truth (`DEFAULT_NOMENCLATURE` fallback in `constants/analytiqueConstants.js`); rename/remove **cascade** through engine rules and data (`hooks/useReclassementData.js`, orchestrated in `App.jsx`). `components/reclassement/OrdersPreview.jsx` shows the orders impacted by each rule.
+
 ## Workspace Layout
 
 The workspace root (`Hospifinance-IT/`) contains two sibling folders:
@@ -56,7 +68,7 @@ npm run dev        # nodemon auto-reload Express server
 npm run init-db    # Initialize MongoDB collections
 ```
 
-Windows convenience scripts also exist: `INSTALL.bat`, `START.bat`, `BUILD.bat`, `DEPLOY_GITHUB.bat`.
+Windows convenience scripts also exist: `INSTALL.bat`, `START.bat`, `BUILD.bat`, `START-HOSPIFINANCE-IT.bat` (frontend + local API), and `START_IT.bat` (frontend only on port 5174, localStorage mode).
 
 ## Architecture
 
@@ -125,6 +137,8 @@ Swapping backends only requires changing the service used inside hooks — no co
 - **No test suite** is configured — there is no `npm test`. Validate changes manually via the running app
 - **ESLint** enforces React hooks rules and react-refresh warnings; run `npm run lint` before any PR
 - **Dev auto-login**: In localhost/dev mode, authentication is bypassed automatically for faster iteration
+- **Optional authentication**: `AuthContext` reads `isAuthRequired()` (`config/runtimeConfig.js`). When auth is disabled (Paramètres → Sécurité), the app grants direct admin access with no login screen; `updateAuthRequired(true)` clears the session and forces login
+- **⚠️ Password storage (security debt)**: in localStorage/browser mode, `AuthContext` stores passwords with `btoa()` (base64, **reversible — not a hash**). Fine for a local single-station demo, **insufficient for any network deployment**. Before exposing the app on a network, move auth to the `backend/` Express/MongoDB server and implement salted hashing (`bcrypt`/`argon2`) server-side over HTTPS. Do not reintroduce a client-side "hash" and call it secure. See the Sécurité sections of `README.md` and `backend/README.md`.
 
 ## Environment Variables
 

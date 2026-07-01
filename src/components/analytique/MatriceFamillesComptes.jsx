@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, X, Building2, FileText, Package } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import { calculateChargeEngagee } from '../../utils/calculations';
-import { reclasserToutes } from '../../utils/reclassementEngine';
+import { reclasserAvecCommandes } from '../../utils/reclassementEngine';
 import { FAMILLE_ANALYTIQUE } from '../../constants/analytiqueConstants';
 
 const fmt = (n) => n > 0 ? formatCurrency(n) : '—';
@@ -412,22 +412,24 @@ export default function MatriceFamillesComptes({ suppliers = [], moteur = {}, ep
   }, [capexOrders]);
 
   const lignesOpex = useMemo(() =>
-    reclasserToutes(
+    reclasserAvecCommandes(
       suppliers.map(s => ({ ...s, chargeEngagee: calculateChargeEngagee(s.depenseActuelle || 0, s.engagement || 0) })),
+      orders,
       moteur
     ),
-  [suppliers, moteur]);
+  [suppliers, orders, moteur]);
 
   const lignesCapex = useMemo(() =>
-    reclasserToutes(
+    reclasserAvecCommandes(
       projects.map(p => ({
         ...p,
         supplier: p.fournisseur || p.project || '—',
         chargeEngagee: calculateChargeEngagee(p.depense || 0, p.engagement || 0),
       })),
+      capexOrders,
       moteur
     ),
-  [projects, moteur]);
+  [projects, capexOrders, moteur]);
 
   const moteurActif = Object.values(moteur).some(v => Array.isArray(v) && v.length > 0);
 

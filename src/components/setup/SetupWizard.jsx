@@ -73,6 +73,7 @@ export default function SetupWizard({ onComplete }) {
   const [ghPath, setGhPath] = useState('data');
 
   // Étape 4 — Sécurité
+  const [authRequired, setAuthRequiredField] = useState(true);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [skipPassword, setSkipPassword] = useState(false);
@@ -93,7 +94,7 @@ export default function SetupWizard({ onComplete }) {
         return 'Token, propriétaire et nom du dépôt sont requis pour la synchronisation GitHub.';
       }
     }
-    if (step === 3 && !skipPassword) {
+    if (step === 3 && authRequired && !skipPassword) {
       if (newPassword.length < 8) return 'Le nouveau mot de passe doit contenir au moins 8 caractères.';
       if (newPassword !== confirmPassword) return 'Les deux mots de passe ne correspondent pas.';
     }
@@ -127,6 +128,7 @@ export default function SetupWizard({ onComplete }) {
           orders: ordersLabel.trim(),
           payments: paymentsLabel.trim(),
         },
+        authRequired,
       });
 
       // 3 — Mode de données
@@ -141,8 +143,8 @@ export default function SetupWizard({ onComplete }) {
         });
       }
 
-      // 4 — Mot de passe administrateur
-      if (!skipPassword && newPassword) {
+      // 4 — Mot de passe administrateur (uniquement si connexion exigée)
+      if (authRequired && !skipPassword && newPassword) {
         const admin = (users || []).find((u) => u.role === 'superadmin') || (users || [])[0];
         if (admin) await changePassword(admin.id, newPassword);
       }
@@ -287,22 +289,38 @@ export default function SetupWizard({ onComplete }) {
 
           {step === 3 && (
             <>
-              <p className="text-sm text-gray-500">
-                Le compte administrateur par défaut est <strong>admin</strong> / <strong>Admin2024!</strong>.
-                Changez ce mot de passe maintenant.
-              </p>
-              <Field label="Nouveau mot de passe administrateur" hint="8 caractères minimum.">
-                <input type="password" className={inputClass} value={newPassword} disabled={skipPassword}
-                  onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" />
-              </Field>
-              <Field label="Confirmer le mot de passe">
-                <input type="password" className={inputClass} value={confirmPassword} disabled={skipPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" />
-              </Field>
-              <label className="flex items-center gap-2 text-xs text-gray-500">
-                <input type="checkbox" checked={skipPassword} onChange={(e) => setSkipPassword(e.target.checked)} />
-                Conserver le mot de passe par défaut (déconseillé — à changer plus tard dans les paramètres)
+              <label className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer border-gray-200">
+                <input type="checkbox" className="mt-1" checked={authRequired}
+                  onChange={(e) => setAuthRequiredField(e.target.checked)} />
+                <span>
+                  <span className="block text-sm font-medium text-gray-800">Exiger une connexion (login / mot de passe)</span>
+                  <span className="block text-xs text-gray-500">
+                    Recommandé. Décoché : l’application est en accès direct, sans écran de connexion
+                    (modifiable ensuite dans Paramètres → Utilisateurs).
+                  </span>
+                </span>
               </label>
+
+              {authRequired && (
+                <>
+                  <p className="text-sm text-gray-500">
+                    Le compte administrateur par défaut est <strong>admin</strong> / <strong>Admin2024!</strong>.
+                    Changez ce mot de passe maintenant.
+                  </p>
+                  <Field label="Nouveau mot de passe administrateur" hint="8 caractères minimum.">
+                    <input type="password" className={inputClass} value={newPassword} disabled={skipPassword}
+                      onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" />
+                  </Field>
+                  <Field label="Confirmer le mot de passe">
+                    <input type="password" className={inputClass} value={confirmPassword} disabled={skipPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" />
+                  </Field>
+                  <label className="flex items-center gap-2 text-xs text-gray-500">
+                    <input type="checkbox" checked={skipPassword} onChange={(e) => setSkipPassword(e.target.checked)} />
+                    Conserver le mot de passe par défaut (déconseillé — à changer plus tard dans les paramètres)
+                  </label>
+                </>
+              )}
             </>
           )}
         </div>

@@ -240,7 +240,15 @@ const tableRow = (doc, x, y, cols, data, isAlt, textColors) => {
     const isBold = textColors && textColors[i] && JSON.stringify(textColors[i]) !== JSON.stringify(C.mid);
     if (isBold) bold(doc, 7.5); else normal(doc, 7.5);
     const tx = col.align === 'right' ? cx + col.w - 2 : cx + 2;
-    doc.text(String(val), tx, y + 4.5, { align: col.align || 'left', maxWidth: col.w - 3 });
+    // Troncature sur une seule ligne (ellipsis) — évite le retour à la ligne
+    // automatique de jsPDF qui ferait déborder le texte sur la ligne suivante.
+    let str = String(val);
+    const maxW = col.w - 3;
+    if (doc.getTextWidth(str) > maxW) {
+      while (str.length > 1 && doc.getTextWidth(str + '…') > maxW) str = str.slice(0, -1);
+      str += '…';
+    }
+    doc.text(str, tx, y + 4.5, { align: col.align || 'left' });
     cx += col.w;
   });
 
@@ -362,14 +370,15 @@ export const generateExecutiveReport = ({
   sectionTitle(doc, 'Consommation globale', 68);
 
   const barY = 77;
-  const barW = 120;
+  const barW = 177; // pleine largeur du contenu (aligné sur les cartes KPI / encadrés OPEX-CAPEX)
+  const barRight = 14 + barW;
 
   textColor(doc, C.mid);
   normal(doc, 7.5);
   doc.text('Charge engagée vs Budget EPRD', 14, barY);
   textColor(doc, statusColor(tauxGlobal));
   bold(doc, 9);
-  doc.text(fmtPct(tauxGlobal), 136, barY, { align: 'right' });
+  doc.text(fmtPct(tauxGlobal), barRight, barY, { align: 'right' });
 
   progressBar(doc, 14, barY + 2, barW, 5, tauxGlobal, statusColor(tauxGlobal));
 
@@ -536,6 +545,8 @@ export const generateExecutiveReport = ({
       dispo:    r.budget - r.depense - r.engagement,
       proj:     monthsElap > 0 ? (r.depense / monthsElap) * 12 + r.engagement : r.engagement,
     }))
+    // On masque les comptes sans aucune activité (ni dépense ni engagement) : sans intérêt
+    .filter(r => r.charge > 0)
     .sort((a, b) => b.taux - a.taux);
 
   const cptCols = [
@@ -555,10 +566,9 @@ export const generateExecutiveReport = ({
   compteRows.forEach((r, i) => {
     if (yRow > 268) return;
     const sc      = r.budget === 0 ? C.muted : statusColor(r.taux);
-    const libTrunc = r.libelle.length > 30 ? r.libelle.slice(0, 28) + '..' : r.libelle;
     tableRow(doc, 14, yRow, cptCols, [
       r.compte,
-      libTrunc,
+      r.libelle,
       r.budget > 0 ? fmtEur(r.budget)   : '-',
       fmtEur(r.depense),
       fmtEur(r.engagement),
@@ -600,7 +610,7 @@ export const generateExecutiveReport = ({
   drawFooter(doc, 2, 3);
 
   // ════════════════════════════════════════════════════════════════
-  // PAGE 3 — DÉTAIL CAPEX PAR ENVELOPPE
+  // PAGE 3 — DÉTAIL CAPEX PAR COMPTE COMPTABLE
   // ════════════════════════════════════════════════════════════════
 
   doc.addPage();
@@ -611,79 +621,86 @@ export const generateExecutiveReport = ({
   rect(doc, 14, 31, 182, 7);
   textColor(doc, C.green);
   bold(doc, 9);
-  doc.text('DÉTAIL CAPEX PAR ENVELOPPE', 105, 36, { align: 'center' });
+  doc.text('DÉTAIL CAPEX PAR COMPTE COMPTABLE', 105, 36, { align: 'center' });
 
-  sectionTitle(doc, 'Investissements par enveloppe au ' + moisLabel + ' ' + annee, 42);
+  sectionTitle(doc, 'Investissements par compte EPRD au ' + moisLabel + ' ' + annee, 42);
 
-  // Agréger projets CAPEX par enveloppe
-  const enveloppeAgg = {};
+  // Agréger projets CAPEX par compte ordonnateur (même logique que l'OPEX)
+  const capCompteAgg = {};
   projects.forEach(p => {
-    const env     = p.enveloppe || p.category || 'Sans enveloppe';
-    const budget  = p.budgetAlloue || p.budget || p.budgetTotal || 0;
-    const depense = p.depenseActuelle || 0;
-    const engage  = p.engagement || 0;
-    if (!enveloppeAgg[env]) {
-      enveloppeAgg[env] = { env, budget: 0, depense: 0, engagement: 0, nbProjets: 0 };
+    const c = p.compteOrdonnateur || 'INCONNU';
+    if (!capCompteAgg[c]) {
+      capCompteAgg[c] = {
+        compte: c,
+        libelle: eprdMap[c]?.libelle || p.libelleCompte || p.enveloppe || c,
+        budget: eprdMap[c]?.budget || 0,
+        depense: 0,
+        engagement: 0,
+        nbProjets: 0,
+      };
     }
-    enveloppeAgg[env].budget     += budget;
-    enveloppeAgg[env].depense    += depense;
-    enveloppeAgg[env].engagement += engage;
-    enveloppeAgg[env].nbProjets  += 1;
+    capCompteAgg[c].depense    += p.depenseActuelle || 0;
+    capCompteAgg[c].engagement += p.engagement || 0;
+    capCompteAgg[c].nbProjets  += 1;
   });
 
-  const envRows = Object.values(enveloppeAgg)
+  const capRows = Object.values(capCompteAgg)
     .map(r => ({
       ...r,
       charge: r.depense + r.engagement,
       taux:   r.budget > 0 ? (r.depense + r.engagement) / r.budget * 100 : 0,
       dispo:  r.budget - r.depense - r.engagement,
     }))
-    .sort((a, b) => b.charge - a.charge);
+    .filter(r => r.charge > 0)
+    .sort((a, b) => b.taux - a.taux || b.charge - a.charge);
 
   const capCols = [
-    { label: 'Enveloppe',    w: 52 },
-    { label: 'Projets',      w: 18, align: 'right' },
-    { label: 'Budget',       w: 26, align: 'right' },
-    { label: 'Dépensé',      w: 26, align: 'right' },
-    { label: 'Engagé',       w: 24, align: 'right' },
-    { label: 'Taux',         w: 14, align: 'right' },
-    { label: 'Disponible',   w: 22, align: 'right' },
+    { label: 'Compte',       w: 20 },
+    { label: 'Libellé',      w: 40 },
+    { label: 'Projets',      w: 14, align: 'right' },
+    { label: 'Budget EPRD',  w: 24, align: 'right' },
+    { label: 'Dépensé',      w: 24, align: 'right' },
+    { label: 'Engagé',       w: 22, align: 'right' },
+    { label: 'Taux',         w: 13, align: 'right' },
+    { label: 'Disponible',   w: 25, align: 'right' },
   ];
 
   tableHeader(doc, 14, 51, capCols);
 
   let yCap = 59;
-  envRows.forEach((r, i) => {
+  capRows.forEach((r, i) => {
     if (yCap > 268) return;
     const sc      = r.budget === 0 ? C.muted : statusColor(r.taux);
-    const envTrunc = r.env.length > 30 ? r.env.slice(0, 28) + '..' : r.env;
     tableRow(doc, 14, yCap, capCols, [
-      envTrunc,
+      r.compte,
+      r.libelle,
       String(r.nbProjets),
       r.budget > 0 ? fmtEur(r.budget)    : '-',
       fmtEur(r.depense),
       fmtEur(r.engagement),
       r.budget > 0 ? fmtPct(r.taux) : '-',
       r.budget > 0 ? fmtEur(r.dispo) : '-',
-    ], i % 2 === 1, [C.dark, C.muted, C.mid, C.green, C.orange, sc, r.dispo < 0 ? C.red : C.green]);
+    ], i % 2 === 1, [C.dark, C.mid, C.muted, C.mid, C.green, C.orange, sc, r.dispo < 0 ? C.red : C.green]);
     yCap += ROW_H;
   });
 
   // Total CAPEX
-  const capTotBudget  = envRows.reduce((s, r) => s + r.budget, 0);
-  const capTotDepense = envRows.reduce((s, r) => s + r.depense, 0);
-  const capTotEngage  = envRows.reduce((s, r) => s + r.engagement, 0);
+  const capTotBudget  = capRows.reduce((s, r) => s + r.budget, 0);
+  const capTotDepense = capRows.reduce((s, r) => s + r.depense, 0);
+  const capTotEngage  = capRows.reduce((s, r) => s + r.engagement, 0);
+  const capTotProjets = capRows.reduce((s, r) => s + r.nbProjets, 0);
   const capTotTaux    = capTotBudget > 0 ? (capTotDepense + capTotEngage) / capTotBudget * 100 : 0;
   const capTotDispo   = capTotBudget - capTotDepense - capTotEngage;
 
   tableTotalRow(doc, 14, yCap + 1, capCols, [
     'TOTAL CAPEX',
-    String(projects.length),
+    '',
+    String(capTotProjets),
     fmtEur(capTotBudget),
     fmtEur(capTotDepense),
     fmtEur(capTotEngage),
-    fmtPct(capTotTaux),
-    fmtEur(capTotDispo),
+    capTotBudget > 0 ? fmtPct(capTotTaux) : '-',
+    capTotBudget > 0 ? fmtEur(capTotDispo) : '-',
   ]);
 
   // Note CAPEX
@@ -692,8 +709,8 @@ export const generateExecutiveReport = ({
     textColor(doc, C.muted);
     italic(doc, 6.5);
     doc.text(
-      `Note : Dépensé = mandaté net. Engagé = Engagé Non Reçu (ENR). Budget = budgetAlloue par projet. ` +
-      `Taux = Charge engagée / Budget. ${projects.length} projet${projects.length > 1 ? 's' : ''} CAPEX au total.`,
+      `Note : Dépensé = mandaté net. Engagé = Engagé Non Reçu (ENR). Budget = EPRD du compte (le cas échéant). ` +
+      `Taux = Charge engagée / Budget EPRD. ${capTotProjets} projet${capTotProjets > 1 ? 's' : ''} CAPEX avec activité.`,
       14, noteCapY, { maxWidth: 182 }
     );
   }

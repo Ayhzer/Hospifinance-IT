@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react';
 import { Plus, Pencil, Trash2, GripVertical, Check, ChevronUp, ChevronDown, Search } from 'lucide-react';
-import { FAMILLE_ANALYTIQUE } from '../../constants/analytiqueConstants';
+import { listFamilles } from '../../constants/analytiqueConstants';
+import { lineMatchesRule } from '../../utils/reclassementEngine';
+import OrdersPreview from './OrdersPreview';
 
-const FAMILLES = Object.values(FAMILLE_ANALYTIQUE);
+const EMPTY_FORM = { label: '', motsCles: '', famille: '', sousCategorie: '' };
 
-const EMPTY_FORM = { label: '', motsCles: '', famille: FAMILLES[0], sousCategorie: '' };
-
-export default function ReglesMosCles({ regles = [], nomenclature = [], onAdd, onUpdate, onDelete, onReorder }) {
+export default function ReglesMosCles({ regles = [], nomenclature = [], orders = [], onAdd, onUpdate, onDelete, onReorder }) {
+  const FAMILLES = useMemo(() => listFamilles(nomenclature), [nomenclature]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
@@ -22,7 +23,7 @@ export default function ReglesMosCles({ regles = [], nomenclature = [], onAdd, o
   const handleSubmit = async (e) => {
     e.preventDefault();
     const mots = form.motsCles.split(',').map(m => m.trim()).filter(Boolean);
-    await onAdd({ label: form.label, motsCles: mots, famille: form.famille, sousCategorie: form.sousCategorie });
+    await onAdd({ label: form.label, motsCles: mots, famille: form.famille || FAMILLES[0], sousCategorie: form.sousCategorie });
     setForm(EMPTY_FORM);
     setShowForm(false);
   };
@@ -53,7 +54,7 @@ export default function ReglesMosCles({ regles = [], nomenclature = [], onAdd, o
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-base font-semibold text-gray-800">Règles mots-clés</h3>
-          <p className="text-xs text-gray-500 mt-0.5">Niveau 3 — Correspondance sur la désignation de la commande (par priorité croissante).</p>
+          <p className="text-xs text-gray-500 mt-0.5">Niveau 3 — Correspondance sur la désignation de la commande ou le nom du fournisseur (par priorité croissante).</p>
         </div>
         <button
           onClick={() => setShowForm(v => !v)}
@@ -102,7 +103,7 @@ export default function ReglesMosCles({ regles = [], nomenclature = [], onAdd, o
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Famille analytique</label>
               <select
-                value={form.famille}
+                value={form.famille || FAMILLES[0]}
                 onChange={e => setForm(f => ({ ...f, famille: e.target.value, sousCategorie: '' }))}
                 className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
@@ -184,32 +185,37 @@ export default function ReglesMosCles({ regles = [], nomenclature = [], onAdd, o
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-3">
-                  <GripVertical size={14} className="text-gray-300 flex-shrink-0 cursor-grab" />
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 flex-1 min-w-0">
-                    <span className="text-xs font-medium text-gray-700 truncate">{regle.label}</span>
-                    <div className="flex flex-wrap gap-1">
-                      {(regle.motsCles || []).map(m => (
-                        <span key={m} className="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">{m}</span>
-                      ))}
+                <div>
+                  <div className="flex items-center gap-3">
+                    <GripVertical size={14} className="text-gray-300 flex-shrink-0 cursor-grab" />
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 flex-1 min-w-0">
+                      <span className="text-xs font-medium text-gray-700 truncate">{regle.label}</span>
+                      <div className="flex flex-wrap gap-1">
+                        {(regle.motsCles || []).map(m => (
+                          <span key={m} className="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">{m}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 text-xs rounded flex-shrink-0">
+                      {regle.famille}{regle.sousCategorie ? ` › ${regle.sousCategorie}` : ''}
+                    </span>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button onClick={() => index > 0 && onReorder(index, index - 1)} disabled={index === 0} className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-30">
+                        <ChevronUp size={13} />
+                      </button>
+                      <button onClick={() => index < sorted.length - 1 && onReorder(index, index + 1)} disabled={index === sorted.length - 1} className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-30">
+                        <ChevronDown size={13} />
+                      </button>
+                      <button onClick={() => startEdit(regle)} className="p-1 text-gray-400 hover:text-blue-600">
+                        <Pencil size={13} />
+                      </button>
+                      <button onClick={() => onDelete(regle.id)} className="p-1 text-gray-400 hover:text-red-600">
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 text-xs rounded flex-shrink-0">
-                    {regle.famille}{regle.sousCategorie ? ` › ${regle.sousCategorie}` : ''}
-                  </span>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button onClick={() => index > 0 && onReorder(index, index - 1)} disabled={index === 0} className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-30">
-                      <ChevronUp size={13} />
-                    </button>
-                    <button onClick={() => index < sorted.length - 1 && onReorder(index, index + 1)} disabled={index === sorted.length - 1} className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-30">
-                      <ChevronDown size={13} />
-                    </button>
-                    <button onClick={() => startEdit(regle)} className="p-1 text-gray-400 hover:text-blue-600">
-                      <Pencil size={13} />
-                    </button>
-                    <button onClick={() => onDelete(regle.id)} className="p-1 text-gray-400 hover:text-red-600">
-                      <Trash2 size={13} />
-                    </button>
+                  <div className="pl-7">
+                    <OrdersPreview orders={orders.filter(o => lineMatchesRule(o, 'moscles', regle))} />
                   </div>
                 </div>
               )}

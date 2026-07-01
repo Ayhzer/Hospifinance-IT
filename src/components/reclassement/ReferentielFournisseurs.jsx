@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react';
 import { Plus, Pencil, Trash2, Check, Search } from 'lucide-react';
-import { FAMILLE_ANALYTIQUE } from '../../constants/analytiqueConstants';
+import { listFamilles } from '../../constants/analytiqueConstants';
+import { lineMatchesRule } from '../../utils/reclassementEngine';
+import OrdersPreview from './OrdersPreview';
 
-const FAMILLES = Object.values(FAMILLE_ANALYTIQUE);
+const EMPTY_FORM = { nom: '', famille: '', sousCategorie: '' };
 
-const EMPTY_FORM = { nom: '', famille: FAMILLES[0], sousCategorie: '' };
-
-export default function ReferentielFournisseurs({ referentiel = [], nomenclature = [], onAdd, onUpdate, onDelete }) {
+export default function ReferentielFournisseurs({ referentiel = [], nomenclature = [], orders = [], onAdd, onUpdate, onDelete }) {
+  const FAMILLES = useMemo(() => listFamilles(nomenclature), [nomenclature]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
@@ -28,7 +29,7 @@ export default function ReferentielFournisseurs({ referentiel = [], nomenclature
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.nom.trim()) return;
-    await onAdd({ nom: form.nom.trim(), famille: form.famille, sousCategorie: form.sousCategorie });
+    await onAdd({ nom: form.nom.trim(), famille: form.famille || FAMILLES[0], sousCategorie: form.sousCategorie });
     setForm(EMPTY_FORM);
     setShowForm(false);
   };
@@ -93,7 +94,7 @@ export default function ReferentielFournisseurs({ referentiel = [], nomenclature
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Famille analytique</label>
               <select
-                value={form.famille}
+                value={form.famille || FAMILLES[0]}
                 onChange={e => setForm(f => ({ ...f, famille: e.target.value, sousCategorie: '' }))}
                 className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
@@ -171,21 +172,24 @@ export default function ReferentielFournisseurs({ referentiel = [], nomenclature
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <span className="text-xs font-semibold text-gray-800 truncate block">{f.nom}</span>
-                    <span className="text-xs text-gray-500">
-                      {f.famille}{f.sousCategorie ? ` › ${f.sousCategorie}` : ''}
-                    </span>
+                <div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs font-semibold text-gray-800 truncate block">{f.nom}</span>
+                      <span className="text-xs text-gray-500">
+                        {f.famille}{f.sousCategorie ? ` › ${f.sousCategorie}` : ''}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button onClick={() => startEdit(f)} className="p-1 text-gray-400 hover:text-blue-600">
+                        <Pencil size={13} />
+                      </button>
+                      <button onClick={() => onDelete(f.id)} className="p-1 text-gray-400 hover:text-red-600">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button onClick={() => startEdit(f)} className="p-1 text-gray-400 hover:text-blue-600">
-                      <Pencil size={13} />
-                    </button>
-                    <button onClick={() => onDelete(f.id)} className="p-1 text-gray-400 hover:text-red-600">
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
+                  <OrdersPreview orders={orders.filter(o => lineMatchesRule(o, 'referentiel', f))} />
                 </div>
               )}
             </div>

@@ -11,8 +11,10 @@ import {
   saveAuthLog, loadAuthLogs, clearAuthLogs
 } from '../services/storageService';
 import * as github from '../services/githubStorageService';
+import { isAuthRequired, setAuthRequired as persistAuthRequired } from '../config/runtimeConfig';
 
 const USE_API = !!import.meta.env.VITE_API_URL;
+const DEV_TOKEN = 'dev-local-bypass-2026';
 
 const AuthContext = createContext(null);
 
@@ -34,21 +36,19 @@ export const AuthProvider = ({ children }) => {
   const [users, setUsers] = useState([]);
   const [authLogs, setAuthLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [authRequired, setAuthRequired] = useState(() => isAuthRequired());
   const githubPushTimer = useRef(null);
   const skipNextGithubPush = useRef(false);
 
   useEffect(() => {
     const init = async () => {
-      // Bypass login en local (dev ou localhost) — jamais en prod déployé
-      const isLocal = import.meta.env.DEV || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      if (isLocal) {
+      // Authentification désactivée → accès direct en administrateur (pas de login).
+      if (!authRequired) {
         const allUsers = initUsers();
         const devAdmin = allUsers.find(u => u.role === 'superadmin' && !u.disabled) || allUsers[0];
         if (devAdmin) {
           setUsers(allUsers);
-          // Poser le token dev pour que les appels API (local-server.js) passent
           if (USE_API) {
-            const DEV_TOKEN = 'dev-local-bypass-hfar-2026';
             localStorage.setItem('authToken', DEV_TOKEN);
             api.setAuthToken(DEV_TOKEN);
           }
@@ -104,6 +104,8 @@ export const AuthProvider = ({ children }) => {
       }
     };
     init();
+    // Init au montage uniquement ; les bascules ultérieures passent par updateAuthRequired.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Sauvegarde automatique localStorage + push GitHub quand users change
@@ -270,6 +272,27 @@ export const AuthProvider = ({ children }) => {
     setAuthLogs([]);
   }, []);
 
+  // Active / désactive l'exigence de connexion (login / mot de passe).
+  const updateAuthRequired = useCallback((required) => {
+    persistAuthRequired(required);
+    setAuthRequired(required);
+    if (required) {
+      // Exiger la connexion : fermer la session courante → écran de login.
+      clearAuthSession();
+      if (USE_API) { localStorage.removeItem('authToken'); api.setAuthToken(null); }
+      setUser(null);
+    } else {
+      // Login désactivé : accès direct en administrateur.
+      const allUsers = (users && users.length) ? users : initUsers();
+      const admin = allUsers.find(u => u.role === 'superadmin' && !u.disabled) || allUsers[0];
+      setUsers(allUsers);
+      if (admin) {
+        if (USE_API) { localStorage.setItem('authToken', DEV_TOKEN); api.setAuthToken(DEV_TOKEN); }
+        setUser({ id: admin.id, username: admin.username, role: admin.role });
+      }
+    }
+  }, [users]);
+
   const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
   const isSuperAdmin = user?.role === 'superadmin';
 
@@ -278,6 +301,7 @@ export const AuthProvider = ({ children }) => {
       user, users, authLogs, loading,
       login, logout, addUser, deleteUser,
       toggleUserDisabled, changePassword, updateUserRole, clearLogs,
+      authRequired, updateAuthRequired,
       isAdmin, isSuperAdmin
     }}>
       {children}

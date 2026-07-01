@@ -302,3 +302,29 @@ export const removeCustomColumn = async (type, columnId) => {
   });
   return handleResponse(response);
 };
+
+// ========================================
+// SOURCE D'IMPORT AUTOMATIQUE (serveur local uniquement)
+// ========================================
+
+/** Statut de la source configurée (chemin lu côté serveur dans settings.json). */
+export const getAutoImportStatus = async () => {
+  const response = await fetch(`${API_BASE_URL}/auto-import/status`, {
+    method: 'GET',
+    headers: getHeaders()
+  });
+  return handleResponse(response);
+};
+
+/** Télécharge le fichier source et le renvoie en Blob (parsable par importCommandes). */
+export const fetchAutoImportFile = async () => {
+  const response = await fetch(`${API_BASE_URL}/auto-import/file`, {
+    method: 'GET',
+    headers: getHeaders()
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Erreur serveur' }));
+    throw new Error(error.error || `Erreur HTTP ${response.status}`);
+  }
+  return response.blob();
+};

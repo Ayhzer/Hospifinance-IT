@@ -2,15 +2,15 @@ import { useMemo, useState, useCallback, useEffect } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, PieChart, Pie, Cell,
-  ComposedChart, Line,
+  ComposedChart, LineChart, Line,
 } from 'recharts';
 import {
   ChevronDown, ChevronRight, Building2,
-  ArrowLeft, TrendingUp, BarChart2, PieChart as PieIcon, GitBranch,
+  ArrowLeft, TrendingUp, BarChart2, PieChart as PieIcon, GitBranch, Activity,
 } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import { calculateChargeEngagee } from '../../utils/calculations';
-import { reclasserToutes } from '../../utils/reclassementEngine';
+import { reclasserToutes, reclasserAvecCommandes } from '../../utils/reclassementEngine';
 import { listExercices, suppliersForYear, projectsForYear, ordersForYear } from '../../utils/yearCalculations';
 
 const fmt  = formatCurrency;
@@ -496,13 +496,61 @@ const ChartMensuelFamille = ({ orders, supplierByIdReclasse, byFamille }) => {
   );
 };
 
+// Évolution annuelle par famille — courbe d'année en année (tous exercices)
+const ChartEvolutionAnnuelle = ({ evolution, typeFilter }) => {
+  const { data, familles } = evolution;
+
+  if (data.length < 1 || familles.length === 0) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm flex items-center justify-center h-48">
+        <p className="text-sm text-gray-400 italic text-center">Aucune donnée d&apos;évolution disponible.</p>
+      </div>
+    );
+  }
+
+  const fluxLabel = typeFilter === 'opex' ? 'OPEX' : typeFilter === 'capex' ? 'CAPEX' : 'OPEX + CAPEX';
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+      <h3 className="text-sm font-semibold text-gray-700 mb-0.5">Évolution annuelle par famille</h3>
+      <p className="text-xs text-gray-400 mb-3">
+        Charge engagée par exercice — {fluxLabel}
+        {data.length === 1 && <span className="ml-1 text-amber-500">(un seul exercice disponible)</span>}
+      </p>
+      <ResponsiveContainer width="100%" height={380}>
+        <LineChart data={data} margin={{ top: 8, right: 24, left: 4, bottom: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="annee" tick={{ fontSize: 11 }} />
+          <YAxis tickFormatter={fmtK} tick={{ fontSize: 10 }} />
+          <Tooltip formatter={(v, name) => [fmt(v), name]} />
+          <Legend wrapperStyle={{ fontSize: 10 }} />
+          {familles.map((f, i) => (
+            <Line
+              key={f}
+              type="monotone"
+              dataKey={f}
+              stroke={f === 'Autres' ? '#9ca3af' : PALETTE[i % PALETTE.length]}
+              strokeWidth={2}
+              strokeDasharray={f === 'Autres' ? '4 3' : undefined}
+              dot={{ r: 2.5 }}
+              activeDot={{ r: 4 }}
+              name={f}
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
+
 // ── Onglets graphiques ────────────────────────────────────────────────────────
 
 const GRAPH_TABS = [
-  { id: 'familles', label: 'Familles',            icon: PieIcon    },
-  { id: 'top10',    label: 'Top 10 fournisseurs', icon: BarChart2  },
-  { id: 'pareto',   label: 'Pareto 80/20',        icon: TrendingUp },
-  { id: 'mensuel',  label: 'Mensuel / Famille',   icon: GitBranch  },
+  { id: 'familles',  label: 'Familles',            icon: PieIcon    },
+  { id: 'top10',     label: 'Top 10 fournisseurs', icon: BarChart2  },
+  { id: 'pareto',    label: 'Pareto 80/20',        icon: TrendingUp },
+  { id: 'mensuel',   label: 'Mensuel / Famille',   icon: GitBranch  },
+  { id: 'evolution', label: 'Évolution annuelle',  icon: Activity   },
 ];
 
 // ── Composant principal ───────────────────────────────────────────────────────
@@ -571,14 +619,16 @@ export default function VueAnalytiqueIT({
     return map;
   }, [capexOrdersF]);
 
-  // OPEX reclassés — exercice sélectionné
+  // OPEX reclassés — exercice sélectionné.
+  // On enrichit chaque fournisseur de la désignation agrégée de ses commandes
+  // pour que les règles de mots-clés (N3) s'appliquent comme dans le simulateur.
   const lignesReclassees = useMemo(() => {
     const lignes = suppliersF.map(s => ({
       ...s,
       chargeEngagee: calculateChargeEngagee(s.depenseActuelle || 0, s.engagement || 0),
     }));
-    return reclasserToutes(lignes, moteur);
-  }, [suppliersF, moteur]);
+    return reclasserAvecCommandes(lignes, ordersF, moteur);
+  }, [suppliersF, ordersF, moteur]);
 
   // Index fournisseurs reclassés par id (pour ChartMensuelFamille)
   const supplierByIdReclasse = useMemo(() => {
@@ -594,11 +644,13 @@ export default function VueAnalytiqueIT({
       const charge   = projOrds.reduce((s, o) => s + Math.abs(o.montant || 0), 0)
                     || calculateChargeEngagee(p.depenseActuelle || 0, p.engagement || 0);
       const nomFourn = p.fournisseur || p.project || '—';
+      const desOrders = projOrds.map(o => o.designation || o.description || '').filter(Boolean).join(' ');
       return {
         ...p,
         supplier:    nomFourn,
         fournisseur: nomFourn,
-        designation: nomFourn,   // permet au niveau 3 (mots-clés) de matcher le nom du projet/fournisseur
+        // N3 (mots-clés) : matche le nom du projet/fournisseur ET la désignation des commandes
+        designation: [nomFourn, desOrders].filter(Boolean).join(' '),
         chargeEngagee: charge,
       };
     });
@@ -652,6 +704,72 @@ export default function VueAnalytiqueIT({
 
     return { byFamille: result, totalCharge: result.reduce((s, f) => s + f.chargeEngagee, 0), allFournisseurs: allFourn };
   }, [lignesReclassees, capexLignes, typeFilter]);
+
+  // Évolution annuelle : charge engagée par famille pour chaque exercice
+  // (recalcul complet par année, en respectant le moteur de reclassement et le filtre OPEX/CAPEX)
+  const evolution = useMemo(() => {
+    const annees = listExercices(orders, capexOrders).sort((a, b) => a.localeCompare(b)); // ordre chronologique
+    if (annees.length === 0) return { data: [], familles: [] };
+
+    const perYear = annees.map(yr => {
+      // OPEX reclassés pour l'année (avec désignations des commandes pour les règles N3)
+      const supF = suppliersForYear(suppliers, orders, yr);
+      const ordsY = ordersForYear(orders, yr);
+      const opexLignes = reclasserAvecCommandes(
+        supF.map(s => ({ ...s, chargeEngagee: calculateChargeEngagee(s.depenseActuelle || 0, s.engagement || 0) })),
+        ordsY,
+        moteur,
+      ).map(l => ({ ...l, type: 'OPEX' }));
+
+      // CAPEX reclassés pour l'année
+      const projF = projectsForYear(projects, capexOrders, yr);
+      const capexByProj = {};
+      ordersForYear(capexOrders, yr).forEach(o => {
+        if (o.parentId == null) return;
+        (capexByProj[String(o.parentId)] ||= []).push(o);
+      });
+      const capexL = reclasserToutes(
+        projF.map(p => {
+          const projOrds = capexByProj[String(p.id)] || [];
+          const charge = projOrds.reduce((s, o) => s + Math.abs(o.montant || 0), 0)
+                      || calculateChargeEngagee(p.depenseActuelle || 0, p.engagement || 0);
+          const nomFourn = p.fournisseur || p.project || '—';
+          const desOrders = projOrds.map(o => o.designation || o.description || '').filter(Boolean).join(' ');
+          return { ...p, supplier: nomFourn, fournisseur: nomFourn, designation: [nomFourn, desOrders].filter(Boolean).join(' '), chargeEngagee: charge };
+        }),
+        moteur,
+      ).map(l => ({ ...l, type: 'CAPEX' }));
+
+      const toutes = [
+        ...(typeFilter !== 'capex' ? opexLignes : []),
+        ...(typeFilter !== 'opex' ? capexL : []),
+      ];
+
+      const famMap = {};
+      toutes.forEach(l => {
+        const fam = l.familleAnalytique || 'Non classé';
+        famMap[fam] = (famMap[fam] || 0) + (l.chargeEngagee || 0);
+      });
+      return { annee: yr, famMap };
+    });
+
+    // Familles classées par charge cumulée sur toutes les années — on garde le top 8, le reste → « Autres »
+    const totals = {};
+    perYear.forEach(p => Object.entries(p.famMap).forEach(([f, v]) => { totals[f] = (totals[f] || 0) + v; }));
+    const famSorted = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
+    const MAX_LINES = 8;
+    const principal = famSorted.slice(0, MAX_LINES);
+    const autres = famSorted.slice(MAX_LINES);
+
+    const data = perYear.map(p => {
+      const row = { annee: p.annee };
+      principal.forEach(f => { row[f] = Math.round(p.famMap[f] || 0); });
+      if (autres.length) row['Autres'] = Math.round(autres.reduce((s, f) => s + (p.famMap[f] || 0), 0));
+      return row;
+    });
+
+    return { data, familles: autres.length ? [...principal, 'Autres'] : principal };
+  }, [suppliers, orders, projects, capexOrders, moteur, typeFilter]);
 
   // Détail filtré sur la sous-famille sélectionnée dans le graphe de droite
   const { displayByFamille, displayTotal } = useMemo(() => {
@@ -741,26 +859,28 @@ export default function VueAnalytiqueIT({
 
       {/* Onglets graphiques */}
       <div>
-        <div className="flex gap-1 border-b border-gray-200 mb-4">
-          {GRAPH_TABS.map(tab => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setGraphTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium border-b-2 transition-colors ${
-                  graphTab === tab.id
-                    ? 'border-indigo-600 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <Icon size={13} />
-                {tab.label}
-              </button>
-            );
-          })}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <div className="inline-flex flex-wrap gap-1 bg-gray-100 p-1 rounded-xl">
+            {GRAPH_TABS.map(tab => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setGraphTab(tab.id)}
+                  className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                    graphTab === tab.id
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-gray-600 hover:bg-white hover:text-gray-900'
+                  }`}
+                >
+                  <Icon size={16} />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
           {totalOrders > 0 && (
-            <span className="ml-auto self-center text-xs text-gray-400">{totalOrders} commandes</span>
+            <span className="text-xs text-gray-400">{totalOrders} commandes</span>
           )}
         </div>
 
@@ -777,6 +897,9 @@ export default function VueAnalytiqueIT({
         {graphTab === 'pareto'  && <ChartPareto allFournisseurs={allFournisseurs} totalCharge={totalCharge} />}
         {graphTab === 'mensuel' && (
           <ChartMensuelFamille orders={ordersF} supplierByIdReclasse={supplierByIdReclasse} byFamille={byFamille} />
+        )}
+        {graphTab === 'evolution' && (
+          <ChartEvolutionAnnuelle evolution={evolution} typeFilter={typeFilter} />
         )}
       </div>
 

@@ -88,6 +88,17 @@ export const markWelcomeSeen = () => {
 };
 
 /**
+ * L'application exige-t-elle une connexion (login / mot de passe) ?
+ * Par défaut OUI. Mettre à false désactive l'authentification (accès direct).
+ */
+export const isAuthRequired = () => {
+  try { return loadAppConfig().authRequired !== false; } catch { return true; }
+};
+
+/** Active (true) ou désactive (false) l'exigence de connexion. */
+export const setAuthRequired = (required) => { saveAppConfig({ authRequired: !!required }); };
+
+/**
  * L'assistant doit-il s'afficher ?
  * Non si : déjà terminé, OU un backend est configuré par variables
  * d'environnement (déploiement « managé » : API locale / GitHub), OU des

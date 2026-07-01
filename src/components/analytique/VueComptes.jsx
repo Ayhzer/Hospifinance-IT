@@ -8,7 +8,7 @@ import { calculateChargeEngagee, getAlertLevelDSI } from '../../utils/calculatio
 import { normalizeCompte, buildEprdMap } from '../../utils/compte';
 import { detectComptesOrphelins } from '../../utils/anomaliesUtils';
 import {
-  listExercices, suppliersForYear, projectsForYear, ordersForYear, getOrderYear,
+  listExercices, suppliersForYear, projectsForYear, ordersForYear, getOrderYear, orderAmounts,
 } from '../../utils/yearCalculations';
 
 const fmt = (n) => formatCurrency(n ?? 0);
@@ -540,7 +540,8 @@ const buildEvolution = (entities, orders, exercices, eprdMap) => {
     if (!compte) return;
     const y = getOrderYear(o);
     if (!y) return;
-    const charge = (Number(o.mandateNet) || 0) + (Number(o.engagementNonRecu) || 0);
+    const a = orderAmounts(o);
+    const charge = a.depense + a.engagement;
     if (!map.has(compte)) map.set(compte, { compte, byYear: {} });
     const g = map.get(compte);
     g.byYear[y] = (g.byYear[y] || 0) + charge;
@@ -810,18 +811,18 @@ export default function VueComptes({ suppliers = [], projects = [], eprd = [], o
       )}
 
       {/* Sous-onglets */}
-      <div className="flex gap-1 border-b border-gray-200">
+      <div className="inline-flex flex-wrap gap-1 bg-gray-100 p-1 rounded-xl">
         {SUB_TABS.map(tab => {
           const Icon = tab.icon;
           return (
             <button
               key={tab.id}
               onClick={() => setSubTab(tab.id)}
-              className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium border-b-2 transition-colors ${
-                subTab === tab.id ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+              className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                subTab === tab.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-600 hover:bg-white hover:text-gray-900'
               }`}
             >
-              <Icon size={13} />
+              <Icon size={16} />
               {tab.label}
             </button>
           );

@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { orderAmounts } from '../utils/yearCalculations';
 const MOIS_LABELS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
 
 const normalizeNom = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -245,7 +246,7 @@ const buildEditeursFromData = (rawData) => {
     const hasMultiComptes = comptesArray.length > 1;
 
     // Ratio engagement / mandaté
-    const totalMandated  = orders.reduce((s, o) => s + (o.montantMandated || o.montantRealise || 0), 0);
+    const totalMandated  = orders.reduce((s, o) => s + (o.montantMandated ?? orderAmounts(o).realise), 0);
     const ratioEngagement = total > 0 && totalMandated > 0 ? totalMandated / total : null;
 
     editeurs.push({

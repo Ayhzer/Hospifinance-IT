@@ -17,12 +17,20 @@ fenêtre de bienvenue s'affiche au premier lancement, et le bouton d'aide flotta
 4. Réimportez le fichier : la classification OPEX / CAPEX, le regroupement par
    fournisseur et le reclassement analytique sont **automatiques**.
 
+> **Mise à jour automatique.** En mode serveur local, vous pouvez configurer un
+> **fichier source surveillé** dans **Paramètres → Source automatique** : à chaque
+> lancement, si une version plus récente est détectée, l'application propose de
+> réimporter les données en un clic.
+
 ## 2. Définir vos budgets
 
-- Cliquez sur **« Renseigner le budget »** en haut de la Vue d'ensemble pour saisir le
-  **budget EPRD** par compte ordonnateur (également accessible via le module
-  **« Par comptes »**).
-- Le **budget CAPEX** se saisit **par exercice** — chaque année conserve son enveloppe.
+- Cliquez sur **« Renseigner le budget »** en haut de la Vue d'ensemble : un éditeur à
+  deux onglets s'ouvre.
+  - **OPEX** — saisie du **budget EPRD** par compte ordonnateur (également accessible via
+    le module **« Par comptes »**).
+  - **CAPEX** — **budget global par exercice** et/ou **budget par enveloppe** (projet),
+    avec un **contrôle d'équilibre** signalant tout écart entre la somme des enveloppes et
+    le budget global.
 - Les **seuils d'alerte** (taux d'utilisation orange / rouge) se règlent dans
   **Paramètres → Règles**.
 
@@ -30,8 +38,12 @@ fenêtre de bienvenue s'affiche au premier lancement, et le bouton d'aide flotta
 
 - Le module **« Reclassement »** associe chaque fournisseur ou nature à une **famille
   analytique**.
-- Définissez des **règles** (par fournisseur, par nature ou par mot-clé) ; elles
-  s'appliquent en masse sur l'OPEX et le CAPEX.
+- La **nomenclature** (familles et sous-catégories) est **éditable** directement dans le
+  module : ajout, renommage et suppression se répercutent **en cascade** sur les règles et
+  les données.
+- Définissez des **règles** (par fournisseur, par nature ou par mot-clé) ; un **aperçu des
+  commandes concernées** est dépliable à chaque niveau. Elles s'appliquent en masse sur
+  l'OPEX et le CAPEX.
 
 ## 4. Piloter et analyser
 
@@ -57,6 +69,9 @@ fenêtre de bienvenue s'affiche au premier lancement, et le bouton d'aide flotta
 ## 6. Sécurité & données réelles
 
 - **Changez les mots de passe par défaut** (`admin` / `user`) dès la mise en service.
+- L'**authentification est optionnelle** (**Paramètres → Sécurité**) : activée, elle impose
+  la connexion par login / mot de passe ; désactivée, l'accès se fait directement en
+  administrateur (réservez ce mode à un poste de confiance).
 - Pour des **données réelles** d'établissement, utilisez un **dépôt de données privé**
   (jamais public).
 - Rôles disponibles : **superadmin**, **admin**, **user** — chacun avec ses permissions.

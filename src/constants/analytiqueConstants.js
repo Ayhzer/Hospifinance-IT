@@ -19,6 +19,86 @@ export const FAMILLE_ANALYTIQUE = {
 export const HORS_PERIMETRE_LABEL = FAMILLE_ANALYTIQUE.HORS_PERIMETRE;
 
 /**
+ * Liste des familles analytiques disponibles dans les listes déroulantes.
+ * Source de vérité = la NOMENCLATURE (éditable), complétée par les valeurs déjà
+ * présentes dans les données (`extra`, anti-orphelin) et toujours « Hors
+ * périmètre » en dernier recours. Garantit qu'aucune famille affectée ne
+ * disparaît d'un menu même si elle n'est plus dans la nomenclature.
+ */
+export const listFamilles = (nomenclature = [], extra = []) => {
+  const out = [];
+  const seen = new Set();
+  const push = (f) => {
+    const v = String(f || '').trim();
+    if (v && !seen.has(v)) { seen.add(v); out.push(v); }
+  };
+  (nomenclature || []).forEach(n => push(n.famille));
+  (extra || []).forEach(push);
+  push(HORS_PERIMETRE_LABEL);
+  return out;
+};
+
+/** Sous-catégories disponibles pour une famille (depuis la nomenclature). */
+export const sousCategoriesFor = (famille, nomenclature = []) => {
+  const raw = (nomenclature || []).find(n => n.famille === famille)?.sousCategoriesDisponibles || [];
+  return raw.map(s => (typeof s === 'string' ? s : s.label));
+};
+
+/**
+ * Nomenclature par défaut — sous-catégories (N2) par famille analytique (N1).
+ * ---------------------------------------------------------------------------
+ * Taxonomie de DÉMARRAGE issue des bonnes pratiques de benchmark IT (santé et
+ * hors santé). Sert à alimenter les listes de sous-familles du moteur de
+ * reclassement (Référentiel fournisseurs, règles…) dès une installation neuve,
+ * sans dépendre du dépôt de données. Entièrement éditable dans l'application ;
+ * une nomenclature fournie par le dépôt de données (reclassement.json) la
+ * remplace si elle existe.
+ *
+ * `perimetre` : Run (exploitation récurrente) / Build (investissement, projet).
+ */
+export const DEFAULT_NOMENCLATURE = [
+  {
+    famille: FAMILLE_ANALYTIQUE.INFRASTRUCTURE,
+    sousCategoriesDisponibles: [
+      { label: 'Serveurs / virtualisation', perimetre: 'Run + Build', description: 'Serveurs physiques et virtuels, hyperviseurs.' },
+      { label: 'Réseau / liaisons',         perimetre: 'Run',         description: 'Liaisons opérateurs, équipements réseau, WAN/LAN.' },
+      { label: 'Stockage / sauvegarde',     perimetre: 'Run + Build', description: 'Baies de stockage, sauvegarde, archivage.' },
+    ],
+  },
+  {
+    famille: FAMILLE_ANALYTIQUE.APPLICATIONS,
+    sousCategoriesDisponibles: [
+      { label: 'Licences / abonnements',  perimetre: 'Run', description: 'Licences logicielles et abonnements applicatifs.' },
+      { label: 'Maintenance applicative', perimetre: 'Run', description: 'Contrats de maintenance et TMA.' },
+    ],
+  },
+  {
+    famille: FAMILLE_ANALYTIQUE.SUPPORT_USERS,
+    sousCategoriesDisponibles: [
+      { label: 'Poste de travail', perimetre: 'Run', description: 'Matériel et logiciels du poste de travail.' },
+    ],
+  },
+  {
+    famille: FAMILLE_ANALYTIQUE.CYBERSECURITE,
+    sousCategoriesDisponibles: [
+      { label: 'Sécurité / audits', perimetre: 'Run + Build', description: "Outils de sécurité, SOC, audits et tests d'intrusion." },
+    ],
+  },
+  {
+    famille: FAMILLE_ANALYTIQUE.DATA_PILOTAGE,
+    sousCategoriesDisponibles: [
+      { label: 'BI / décisionnel', perimetre: 'Build', description: 'Outils décisionnels et de pilotage de la donnée.' },
+    ],
+  },
+  {
+    famille: FAMILLE_ANALYTIQUE.PRESTATIONS,
+    sousCategoriesDisponibles: [
+      { label: 'Infogérance / prestations', perimetre: 'Run', description: 'Prestations récurrentes externalisées.' },
+    ],
+  },
+];
+
+/**
  * Mapping compte ordonnateur → famille analytique.
  * ---------------------------------------------------------------------------
  * VALEURS DE DÉMONSTRATION. Ce mapping n'est qu'un point de départ (fallback) :

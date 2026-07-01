@@ -5,6 +5,65 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 
 ---
 
+## [1.2.0] — 2026-07-01 — Mise à jour automatique, budget unifié & nomenclature éditable
+
+### ✨ Nouveautés
+
+#### 🔄 Mise à jour automatique depuis un fichier source
+- **Surveillance d'une source d'import** (`hooks/useAutoImportWatcher.js`) : au lancement,
+  l'outil interroge le serveur local pour détecter une **nouvelle version** du fichier
+  source configuré (comparaison de signature : nom, horodatage, taille).
+- **Fenêtre de mise à jour** (`components/common/AutoImportUpdateModal.jsx`) proposée
+  automatiquement quand une version plus récente est disponible : récupération du
+  fichier via le serveur local, parsing par le **circuit d'import canonique**, puis
+  application des données en un clic.
+- **Configuration dans Paramètres → « Source automatique »** : activation, chemin du
+  dossier (ou fichier) source et nom de fichier attendu (vide = `.xlsx` le plus récent).
+- **Endpoints serveur** (`local-server.js`) : `GET /auto-import/status` (état de la
+  source) et `GET /auto-import/file` (contenu du fichier). Fonctionne **uniquement en
+  mode serveur local** (`VITE_API_URL` défini / `npm start`) ; inerte en navigateur seul.
+
+#### 💶 Éditeur de budget unifié (OPEX + CAPEX)
+- **Modal budget à deux onglets** (`components/analytique/BudgetEditorModal.jsx`) ouvert
+  par le bouton « Renseigner le budget » :
+  - **OPEX** — budget EPRD par compte ordonnateur (éditeur existant intégré) ;
+  - **CAPEX** — nouvel éditeur (`CapexBudgetEditor.jsx`) : budget **global par exercice**
+    et budget **par enveloppe (projet)**, avec **contrôle d'équilibre** (avertissement non
+    bloquant si Σ enveloppes ≠ global, et bouton d'alignement du global sur la somme).
+
+#### 🗂️ Nomenclature analytique éditable
+- **Gestion des catégories & sous-catégories** (`components/reclassement/GestionNomenclature.jsx`)
+  directement dans le module Reclassement : ajout, renommage, suppression des **familles
+  analytiques** et de leurs **sous-catégories**, avec **périmètre** (Run / Build / Run + Build).
+- La **nomenclature est la source de vérité** : celle du dépôt de données prime, sinon une
+  nomenclature de référence intégrée est utilisée (`DEFAULT_NOMENCLATURE`).
+- **Renommage / suppression en cascade** : les règles du moteur et les données associées
+  (fournisseurs, projets, EPRD) sont mises à jour de façon cohérente ; la suppression
+  bascule vers un libellé de repli (« Hors périmètre » par défaut).
+
+#### 🔁 Refonte du module de reclassement
+- **Aperçu des commandes concernées** (`components/reclassement/OrdersPreview.jsx`),
+  dépliable dans les 4 niveaux de règles (Référentiel fournisseurs, Règles contextuelles,
+  Mots-clés, Mapping comptes).
+- Refonte de l'aperçu global (`PreviewReclassement.jsx`) et des éditeurs de règles
+  (multi-nature, mots-clés, mapping) pour s'appuyer sur la nomenclature éditable.
+
+#### 🔐 Authentification optionnelle
+- Nouvelle bascule **« Authentification requise »** (Paramètres → Sécurité) :
+  - **activée** — connexion par login / mot de passe imposée (comportement historique) ;
+  - **désactivée** — accès direct en administrateur, sans écran de connexion (poste de
+    confiance / usage mono-utilisateur).
+- Préférence persistée via `config/runtimeConfig.js` (`isAuthRequired` / `setAuthRequired`).
+
+### 🛠️ Divers
+- Script Windows **`START_IT.bat`** : lance le frontend seul sur le **port 5174**
+  (`--strictPort`) pour cohabiter sans conflit avec Hospifinance HFAR (5173 / 3001), et
+  ouvre le navigateur automatiquement.
+- Rapport exécutif PDF, calculs multi-exercice (`utils/yearCalculations.js`) et analyses
+  (VueAnalytique IT/CAPEX, Éditeurs, Matrice) ajustés en cohérence avec la nomenclature.
+
+---
+
 ## [1.1.0] — 2026-06-26 — Assistant de premier lancement & accompagnement
 
 ### ✨ Nouveautés
@@ -188,7 +247,7 @@ Fichiers **exclus** du dépôt Git (données opérationnelles SAGE/MAGH2) :
 
 ### ✨ Majeures
 
-- Authentification multi-rôles (superadmin / admin / user), hashage SHA-256
+- Authentification multi-rôles (superadmin / admin / user), mots de passe encodés en base64 (⚠️ à durcir : hachage salé côté serveur pour une exposition réseau)
 - Système de commandes 6 statuts avec impact budgétaire automatique
 - Panneau de paramétrage : Apparence, Colonnes, Règles, Utilisateurs, Logs
 - Journal d'audit complet

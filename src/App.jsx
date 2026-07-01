@@ -41,18 +41,20 @@ import DetailsCommandes from './components/orders/DetailsCommandes';
 import { OrderModal } from './components/orders/OrderModal';
 import { AlertBanner } from './components/common/AlertBanner';
 import ImportModal from './components/common/ImportModal';
+import AutoImportUpdateModal from './components/common/AutoImportUpdateModal';
+import { useAutoImportWatcher } from './hooks/useAutoImportWatcher';
 import VueAnalytiqueIT from './components/analytique/VueAnalytiqueIT';
 import AnomaliesPanel from './components/analytique/AnomaliesPanel';
 import ProjectionPage from './components/projection/ProjectionPage';
 import VueComptes from './components/analytique/VueComptes';
 import MatriceFamillesComptes from './components/analytique/MatriceFamillesComptes';
-import EprdBudgetEditor from './components/analytique/EprdBudgetEditor';
+import BudgetEditorModal from './components/analytique/BudgetEditorModal';
 import ReclassementPage from './components/reclassement/ReclassementPage';
 import ReconciliationPage from './components/reconciliation/ReconciliationPage';
 import AnalyseEditeurs from './components/editeurs/AnalyseEditeurs';
 import NoticeVueEnsemble from './components/dashboard/NoticeVueEnsemble';
 import ComparaisonAnnuelle from './components/dashboard/ComparaisonAnnuelle';
-import { EPRD_STATIC } from './constants/analytiqueConstants';
+import { EPRD_STATIC, HORS_PERIMETRE_LABEL } from './constants/analytiqueConstants';
 import { wasSetupViaWizard } from './config/runtimeConfig';
 import { useReclassementData } from './hooks/useReclassementData';
 import { listExercices, suppliersForYear, projectsForYear, ordersForYear } from './utils/yearCalculations';
@@ -61,7 +63,7 @@ import { normalizeCompte } from './utils/compte';
 const HospitalITFinanceDashboard = () => {
   const { user, logout, loading: authLoading } = useAuth();
   const permissions = usePermissions();
-  const { settings, setIsSettingsOpen, addDashboard, addOpexSupplier, addOpexCategory } = useSettings();
+  const { settings, setIsSettingsOpen, addDashboard, addOpexSupplier, addOpexCategory, updateAutoImport } = useSettings();
   const { handleTitleClick } = useSettingsShortcut();
 
   // États pour les onglets
@@ -221,6 +223,21 @@ const HospitalITFinanceDashboard = () => {
     });
   };
 
+  // Budget CAPEX par enveloppe et par exercice : { année: { enveloppe: budget } }
+  const [capexEnveloppeBudgets, setCapexEnveloppeBudgets] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('hospifinance_capex_enveloppe_budgets')) || {}; }
+    catch { return {}; }
+  });
+  const capexEnvBudgetsYear = capexEnveloppeBudgets[anneeSelectionnee] || {};
+  const handleCapexEnvBudgetChange = (env, val) => {
+    setCapexEnveloppeBudgets(prev => {
+      const year = anneeSelectionnee;
+      const next = { ...prev, [year]: { ...(prev[year] || {}), [env]: val } };
+      try { localStorage.setItem('hospifinance_capex_enveloppe_budgets', JSON.stringify(next)); } catch (_e) { /* storage indisponible */ }
+      return next;
+    });
+  };
+
   // Budget EPRD restreint à l'exercice sélectionné (lignes sans `annee` = valables pour tous)
   const eprdForYear = useMemo(
     () => eprdData.filter(e => !e.annee || String(e.annee) === String(anneeSelectionnee)),
@@ -273,7 +290,31 @@ const HospitalITFinanceDashboard = () => {
     deleteRegleMosCles,
     reorderReglesMosCles,
     updateMappingCompte,
+    addFamille,
+    renameFamille,
+    removeFamille,
+    addSousCategorie,
+    renameSousCategorie,
+    removeSousCategorie,
   } = useReclassementData();
+
+  // Cascade d'un renommage/suppression de famille vers les DONNÉES (fournisseurs,
+  // projets, EPRD) — en complément du moteur (géré par renameFamille/removeFamille).
+  const cascadeFamille = useCallback((mapFn) => {
+    replaceAllSuppliers((suppliers || []).map(s => s.familleAnalytique ? { ...s, familleAnalytique: mapFn(s.familleAnalytique) } : s));
+    replaceAllProjects((projects || []).map(p => p.familleAnalytique ? { ...p, familleAnalytique: mapFn(p.familleAnalytique) } : p));
+    persistEprd((eprdData || []).map(e => e.familleAnalytique ? { ...e, familleAnalytique: mapFn(e.familleAnalytique) } : e));
+  }, [replaceAllSuppliers, replaceAllProjects, persistEprd, suppliers, projects, eprdData]);
+
+  const handleRenameFamille = useCallback(async (oldName, newName) => {
+    await renameFamille(oldName, newName);
+    cascadeFamille(v => (v === oldName ? newName : v));
+  }, [renameFamille, cascadeFamille]);
+
+  const handleRemoveFamille = useCallback(async (nom) => {
+    await removeFamille(nom, HORS_PERIMETRE_LABEL);
+    cascadeFamille(v => (v === nom ? HORS_PERIMETRE_LABEL : v));
+  }, [removeFamille, cascadeFamille]);
   useEffect(() => {
     const apiUrl = import.meta.env.VITE_API_URL;
     if (apiUrl) {
@@ -325,6 +366,10 @@ const HospitalITFinanceDashboard = () => {
       replaceAllCapexOrders(capexOrders);
     }
   }, [replaceAllSuppliers, replaceAllOpexOrders, replaceAllProjects, replaceAllCapexOrders, addOpexSupplier, addOpexCategory]);
+
+  // Surveillance de la source d'import automatique (serveur local)
+  const autoImportConfig = settings.autoImport;
+  const { pending: autoImportPending, dismiss: dismissAutoImport } = useAutoImportWatcher(autoImportConfig);
 
   // Dashboard builder data
   const dashboardData = useDashboardData({
@@ -803,6 +848,12 @@ const HospitalITFinanceDashboard = () => {
             onUpdateMappingCompte={updateMappingCompte}
             onApplyReclassement={handleApplyReclassement}
             onApplyReclassementCapex={handleApplyReclassementCapex}
+            onAddFamille={addFamille}
+            onRenameFamille={handleRenameFamille}
+            onRemoveFamille={handleRemoveFamille}
+            onAddSousCategorie={addSousCategorie}
+            onRenameSousCategorie={renameSousCategorie}
+            onRemoveSousCategorie={removeSousCategorie}
           />
         )}
 
@@ -894,14 +945,38 @@ const HospitalITFinanceDashboard = () => {
           moteur={moteur}
         />
 
+        {/* Popup de mise à jour automatique depuis le fichier source */}
+        {autoImportPending && (
+          <AutoImportUpdateModal
+            status={autoImportPending}
+            exercice={autoImportConfig?.exercice || ''}
+            convertHT={!!autoImportConfig?.convertHT}
+            moteur={moteur}
+            lastImport={autoImportConfig?.lastImport}
+            onCommandesImport={handleSageImport}
+            onConfirmed={(sig) => updateAutoImport({ lastImport: sig, lastSeen: { signature: sig.signature } })}
+            onLater={(sig) => { updateAutoImport({ lastSeen: { signature: sig.signature } }); dismissAutoImport(); }}
+          />
+        )}
+
         {/* Éditeur EPRD */}
         {showEprdEditor && (
-          <EprdBudgetEditor
-            eprd={eprdData}
-            annee={anneeSelectionnee}
-            knownComptes={knownComptes}
-            onChange={persistEprd}
+          <BudgetEditorModal
             onClose={() => setShowEprdEditor(false)}
+            opex={{
+              eprd: eprdData,
+              annee: anneeSelectionnee,
+              knownComptes,
+              onChange: persistEprd,
+            }}
+            capex={{
+              annee: anneeSelectionnee,
+              enveloppes: settings.capexEnveloppes || [],
+              global: capexBudgetYear,
+              onGlobalChange: handleCapexBudgetChange,
+              envBudgets: capexEnvBudgetsYear,
+              onEnvBudgetChange: handleCapexEnvBudgetChange,
+            }}
           />
         )}
 

@@ -117,8 +117,18 @@ const applyReglesMultiNature = (ligne, regles) => {
 
 // ── Niveau 3 : Mots-clés (désignation) ──────────────────────────────────────
 
+// Texte recherché par les mots-clés (N3) : désignation de la commande + nom du
+// fournisseur. Inclure le fournisseur permet aux règles générées automatiquement
+// (« Auto: <fournisseur> », mot-clé = nom du fournisseur) de s'appliquer, le nom
+// n'apparaissant pas dans la désignation des commandes.
+const motsClesText = (ligne) =>
+  [
+    ligne.designation || ligne.description || '',
+    ligne.fournisseur || ligne.supplier || '',
+  ].filter(Boolean).join(' ').toLowerCase();
+
 const applyReglesMosCles = (ligne, regles) => {
-  const text = String(ligne.designation || ligne.description || '').toLowerCase();
+  const text = motsClesText(ligne);
   if (!text) return null;
 
   const sorted = [...regles].sort((a, b) => getPriorite(a) - getPriorite(b));
@@ -184,6 +194,43 @@ export const reclasser = (ligne, moteur) => {
 };
 
 /**
+ * Une ligne (commande enrichie) correspond-elle à UNE règle d'un niveau donné ?
+ * Sert à prévisualiser les commandes concernées par une règle, niveau par niveau.
+ * @param {object} ligne - commande enrichie { fournisseur, designation|description, compteOrdonnateur }
+ * @param {'referentiel'|'multinature'|'moscles'|'mapping'} level
+ * @param {object} rule  - l'entrée/règle du niveau concerné
+ */
+export const lineMatchesRule = (ligne, level, rule) => {
+  switch (level) {
+    case 'referentiel': {
+      const nom = getNomFourn(ligne);
+      return !!nom && getNomFourn(rule) === nom;
+    }
+    case 'multinature': {
+      const ligneFourn = String(ligne.fournisseur || ligne.supplier || '').toLowerCase().trim();
+      const regleFourn = getNomFourn(rule);
+      if (regleFourn && ligneFourn && regleFourn !== ligneFourn) return false;
+      return matchesConditions(ligne, rule.conditions);
+    }
+    case 'moscles': {
+      const text = motsClesText(ligne);
+      if (!text) return false;
+      const mots = rule.motCle
+        ? [String(rule.motCle)]
+        : (Array.isArray(rule.motsCles) ? rule.motsCles : []);
+      return mots.some(m => m && text.includes(String(m).toLowerCase()));
+    }
+    case 'mapping': {
+      const c = String(ligne.compteOrdonnateur || ligne.compte || '').split('|')[0].trim().toUpperCase();
+      const ruleC = String(rule.compte || '').split('|')[0].trim().toUpperCase();
+      return !!c && !!ruleC && c === ruleC;
+    }
+    default:
+      return false;
+  }
+};
+
+/**
  * Classe un tableau de lignes en masse.
  */
 export const reclasserToutes = (lignes, moteur) =>
@@ -196,3 +243,42 @@ export const reclasserToutes = (lignes, moteur) =>
       sourceReclassement: result.source,
     };
   });
+
+/**
+ * Construit, par parent (fournisseur/projet), une désignation agrégée à partir
+ * des désignations de ses commandes.
+ *
+ * Les lignes fournisseur/projet n'ont pas de désignation propre : sans cet
+ * enrichissement, les règles de niveau 3 (mots-clés) et les conditions N2 sur
+ * DESIGNATION ne peuvent jamais s'appliquer dans les vues qui reclassent au
+ * niveau fournisseur (Vue analytique, Matrice, « Appliquer le reclassement »).
+ * @returns {Object} { [parentId]: "désignation1 désignation2 …" }
+ */
+export const buildDesignationsByParent = (orders = []) => {
+  const map = {};
+  (orders || []).forEach(o => {
+    if (!o || o.parentId == null) return;
+    const txt = String(o.designation || o.description || '').trim();
+    if (!txt) return;
+    const key = String(o.parentId);
+    map[key] = map[key] ? `${map[key]} ${txt}` : txt;
+  });
+  return map;
+};
+
+/**
+ * Reclasse des lignes fournisseur/projet en les enrichissant au préalable de la
+ * désignation agrégée de leurs commandes (cf. buildDesignationsByParent), afin
+ * que les règles basées sur la désignation s'appliquent comme dans le simulateur.
+ * Une `designation` déjà présente sur la ligne est préservée.
+ */
+export const reclasserAvecCommandes = (lignes, orders, moteur) => {
+  const desByParent = buildDesignationsByParent(orders);
+  return reclasserToutes(
+    (lignes || []).map(l => ({
+      ...l,
+      designation: l.designation || desByParent[String(l.id)] || '',
+    })),
+    moteur
+  );
+};

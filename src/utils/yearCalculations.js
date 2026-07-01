@@ -8,7 +8,39 @@
  * commandes, ce qui rend la Vue d'ensemble sélectionnable et comparable par année.
  */
 
+import { ORDER_IMPACT } from '../constants/orderConstants';
+
 const round2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
+
+/**
+ * Détermine si une commande porte le détail issu de l'import des commandes
+ * (mandateNet / engagementNonRecu / montantRealise). Les commandes saisies
+ * manuellement ne possèdent pas ces champs : seuls `montant` et `status` sont
+ * renseignés.
+ */
+const hasImportBreakdown = (o) =>
+  o && (o.mandateNet !== undefined || o.engagementNonRecu !== undefined || o.montantRealise !== undefined);
+
+/**
+ * Renvoie les montants { depense, engagement, realise } d'une commande.
+ * - Commandes importées : on lit le détail (mandaté / engagement non reçu / réalisé).
+ * - Commandes saisies manuellement : on dérive du couple montant + statut via ORDER_IMPACT
+ *   (Commandée/Livrée = engagement, Facturée/Payée = dépense réalisée).
+ */
+export const orderAmounts = (o) => {
+  if (hasImportBreakdown(o)) {
+    return {
+      depense:    Number(o.mandateNet) || 0,
+      engagement: Number(o.engagementNonRecu) || 0,
+      realise:    Number(o.montantRealise) || 0,
+    };
+  }
+  const montant = Number(o?.montant) || 0;
+  const impact = ORDER_IMPACT[o?.status];
+  if (impact === 'depense')    return { depense: montant, engagement: 0, realise: montant };
+  if (impact === 'engagement') return { depense: 0, engagement: montant, realise: 0 };
+  return { depense: 0, engagement: 0, realise: 0 };
+};
 
 /**
  * Détermine l'année (exercice) d'une commande.
@@ -48,9 +80,10 @@ export const aggregateByParentForYear = (orders, year) => {
     if (getOrderYear(o) !== target) return;
     const key = String(o.parentId);
     if (!byParent[key]) byParent[key] = { depense: 0, engagement: 0, realise: 0 };
-    byParent[key].depense    += Number(o.mandateNet) || 0;
-    byParent[key].engagement += Number(o.engagementNonRecu) || 0;
-    byParent[key].realise    += Number(o.montantRealise) || 0;
+    const a = orderAmounts(o);
+    byParent[key].depense    += a.depense;
+    byParent[key].engagement += a.engagement;
+    byParent[key].realise    += a.realise;
   });
   return byParent;
 };
@@ -107,9 +140,10 @@ export const computeYearConsumption = (orders, year) => {
   const target = String(year);
   (orders || []).forEach(o => {
     if (getOrderYear(o) !== target) return;
-    depense    += Number(o.mandateNet) || 0;
-    engagement += Number(o.engagementNonRecu) || 0;
-    realise    += Number(o.montantRealise) || 0;
+    const a = orderAmounts(o);
+    depense    += a.depense;
+    engagement += a.engagement;
+    realise    += a.realise;
   });
   return {
     depense:    round2(depense),
