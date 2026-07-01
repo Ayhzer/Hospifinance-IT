@@ -42,7 +42,18 @@ const DEFAULT_SETTINGS = {
   capexEnveloppes: [...ENVELOPPES_CAPEX],
   opexSuppliers: [],
   opexCategories: [...OPEX_CATEGORIES],
-  hiddenTabs: []
+  hiddenTabs: [],
+  // Source automatique — fichier d'extraction surveillé par le serveur local (mode API)
+  autoImport: {
+    enabled: false,
+    path: '',            // dossier surveillé (ou chemin de fichier complet)
+    fileName: '',        // nom de fichier attendu (vide = .xlsx le plus récent)
+    logName: '',         // journal d'extraction optionnel (ex: extraction.log)
+    exercice: '',        // exercice par défaut ('' = tous)
+    convertHT: false,
+    lastSeen: null,      // { signature } — version déjà proposée
+    lastImport: null,    // { signature, fileName, importedAt }
+  }
 };
 
 const mergeSettings = (stored) => ({
@@ -60,7 +71,8 @@ const mergeSettings = (stored) => ({
   capexEnveloppes: stored.capexEnveloppes || [...ENVELOPPES_CAPEX],
   opexSuppliers: stored.opexSuppliers || [],
   opexCategories: stored.opexCategories || [...OPEX_CATEGORIES],
-  hiddenTabs: stored.hiddenTabs || []
+  hiddenTabs: stored.hiddenTabs || [],
+  autoImport: { ...DEFAULT_SETTINGS.autoImport, ...(stored.autoImport || {}) }
 });
 
 export const SettingsProvider = ({ children }) => {
@@ -167,6 +179,15 @@ export const SettingsProvider = ({ children }) => {
         ? hidden.filter(id => id !== tabId)
         : [...hidden, tabId];
       const u = { ...prev, hiddenTabs: nextHidden };
+      persist(u);
+      return u;
+    });
+  }, [persist]);
+
+  // Mise à jour partielle de la config d'import automatique
+  const updateAutoImport = useCallback((patch) => {
+    setSettings(prev => {
+      const u = { ...prev, autoImport: { ...prev.autoImport, ...patch } };
       persist(u);
       return u;
     });
@@ -356,6 +377,7 @@ export const SettingsProvider = ({ children }) => {
       addCapexEnveloppe, renameCapexEnveloppe, removeCapexEnveloppe,
       addOpexSupplier, renameOpexSupplier, removeOpexSupplier,
       addOpexCategory, renameOpexCategory, removeOpexCategory,
+      updateAutoImport,
       DEFAULT_SETTINGS
     }}>
       {children}

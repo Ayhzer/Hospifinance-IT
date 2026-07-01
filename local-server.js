@@ -79,6 +79,98 @@ function checkPassword(stored, incoming) {
   return false;
 }
 
+// ─── Source d'import automatique ──────────────────────────────────────────────
+
+// Score de ressemblance d'un nom de fichier à la cible souhaitée (préfixe commun,
+// insensible à la casse). Sert à choisir le meilleur fichier dans un dossier.
+function nameScore(name, target) {
+  const a = name.toLowerCase();
+  const b = (target || '').toLowerCase();
+  if (!b) return 0;
+  if (a === b) return 1000;
+  let score = 0;
+  for (let i = 0; i < Math.min(a.length, b.length) && a[i] === b[i]; i++) score++;
+  return score;
+}
+
+// Résout le chemin configuré → fichier .xlsx pertinent.
+// `configured` peut être un dossier ou directement un fichier.
+function resolveSourceFile(configured, targetName) {
+  if (!configured) return null;
+  let stat;
+  try { stat = fs.statSync(configured); } catch { return null; }
+
+  if (stat.isFile()) {
+    return { dir: path.dirname(configured), file: path.basename(configured), full: configured };
+  }
+  if (!stat.isDirectory()) return null;
+
+  const xlsx = fs.readdirSync(configured)
+    .filter(n => /\.xlsx?$/i.test(n) && !n.startsWith('~$')); // ignore les locks Excel
+  if (xlsx.length === 0) return null;
+
+  // Meilleur nom (si cible fournie), puis plus récent en cas d'égalité
+  xlsx.sort((a, b) => {
+    const sb = nameScore(b, targetName) - nameScore(a, targetName);
+    if (sb !== 0) return sb;
+    return fs.statSync(path.join(configured, b)).mtimeMs - fs.statSync(path.join(configured, a)).mtimeMs;
+  });
+  const file = xlsx[0];
+  return { dir: configured, file, full: path.join(configured, file) };
+}
+
+// Lit un journal d'extraction optionnel et renvoie la dernière extraction terminée.
+// Renvoie { logTimestamp, lineCount, ready } ou null si log absent/non configuré.
+function readSourceLog(dir, logName) {
+  if (!logName) return null;
+  let content;
+  try { content = fs.readFileSync(path.join(dir, logName), 'utf8'); } catch { return null; }
+
+  const lines = content.split(/\r?\n/).filter(Boolean);
+  if (lines.length === 0) return null;
+
+  // Ligne de fin d'extraction horodatée « … terminé[e] — N lignes »
+  const doneRe = /^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})[.,\d]*\s+\[[A-Z]+\].*termin[ée]+\s+—?\s*(\d+)?\s*lignes?/i;
+  let last = null;
+  for (const line of lines) {
+    const m = line.match(doneRe);
+    if (m) last = { logTimestamp: m[1].replace(' ', 'T'), lineCount: m[2] ? Number(m[2]) : null };
+  }
+  const ready = doneRe.test(lines[lines.length - 1]);
+  return last ? { ...last, ready } : { logTimestamp: null, lineCount: null, ready };
+}
+
+// Construit le statut complet de la source d'import configurée.
+function autoImportStatus() {
+  const settings = readData('settings.json');
+  const cfg = settings.autoImport || {};
+  if (!cfg.path) return { exists: false, configured: false };
+
+  const resolved = resolveSourceFile(cfg.path, cfg.fileName);
+  if (!resolved) return { exists: false, configured: true, path: cfg.path };
+
+  const fstat = fs.statSync(resolved.full);
+  const log = readSourceLog(resolved.dir, cfg.logName);
+
+  // Signature de version : timestamp du log si dispo, sinon mtime+taille.
+  const signature = log?.logTimestamp || `${Math.round(fstat.mtimeMs)}:${fstat.size}`;
+
+  return {
+    exists: true,
+    configured: true,
+    path: cfg.path,
+    fileName: resolved.file,
+    mtimeMs: fstat.mtimeMs,
+    size: fstat.size,
+    logTimestamp: log?.logTimestamp ?? null,
+    lineCount: log?.lineCount ?? null,
+    signature,
+    // « ready » : pas d'extraction en cours (dernière ligne du log = terminée).
+    // Sans log, on se fie au fichier seul → ready = true.
+    ready: log ? log.ready : true,
+  };
+}
+
 // ─── Utilitaires HTTP ─────────────────────────────────────────────────────────
 
 function cors(res) {
@@ -353,6 +445,28 @@ const server = http.createServer(async (req, res) => {
       list[idx] = { ...list[idx], ...body, compteOrdonnateur: compte };
       writeData('eprd.json', list);
       return json(res, 200, list[idx]);
+    }
+
+    // ── Source d'import automatique ────────────────────────────────────────────
+    if (route === '/auto-import/status' && method === 'GET') {
+      auth(req);
+      return json(res, 200, autoImportStatus());
+    }
+
+    if (route === '/auto-import/file' && method === 'GET') {
+      auth(req);
+      const status = autoImportStatus();
+      if (!status.exists) return json(res, 404, { error: 'Fichier source introuvable' });
+      const cfg = readData('settings.json').autoImport || {};
+      const resolved = resolveSourceFile(cfg.path, cfg.fileName);
+      const buffer = fs.readFileSync(resolved.full);
+      cors(res);
+      res.writeHead(200, {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="${resolved.file}"`,
+      });
+      res.end(buffer);
+      return;
     }
 
     // ── Settings ──────────────────────────────────────────────────────────────

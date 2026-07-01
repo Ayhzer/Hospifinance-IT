@@ -13,9 +13,12 @@ The UI language is **French** — all labels, comments, and user-facing strings 
 ## Configuration (where the "specific" lives)
 
 Everything establishment-specific is in **`src/config/`**:
-- `establishment.js` — `ESTABLISHMENT` (name, shortName, department, currency, defaultYear).
-- `sources.js` — `SOURCE_SOFTWARE` (display labels for the orders/payments software, e.g. ex-MAGH2/ex-SAGE).
+- `establishment.js` — `ESTABLISHMENT` (name, shortName, department, currency, defaultYear). Exports `DEFAULT_ESTABLISHMENT` (build-time defaults) merged at module load with any runtime override.
+- `sources.js` — `SOURCE_SOFTWARE` (display labels for the orders/payments software). Same default+override pattern (`DEFAULT_SOURCE_SOFTWARE`).
 - `accounting.js` — `ACCOUNTING` (OPEX/CAPEX account prefixes, `managerFilter`) and `getLineType()`.
+- `runtimeConfig.js` — runtime override layer (localStorage key `hospifinance_app_config`) written by the first-launch wizard, plus `isSetupDone()` gating.
+
+**First-launch wizard.** `components/setup/SetupGate.jsx` (mounted in `main.jsx` inside the providers) shows `SetupWizard.jsx` on a fresh standalone install — 4 steps: establishment identity, source-software labels, data mode (local vs GitHub), admin password. It writes identity/sources to `runtimeConfig`, then **reloads the page** so config read at import time (e.g. `ANNEE_PILOTAGE`, demo EPRD) is recomputed. The wizard is **skipped** when a backend is configured via env (`VITE_API_URL` / `VITE_GITHUB_TOKEN`) or when legacy data already exists, so existing deployments are untouched.
 
 Demo accounts/families/budgets live in `src/constants/analytiqueConstants.js` but are primarily edited in-app (Reclassement, Budget EPRD) and stored in the data repo.
 
@@ -27,11 +30,23 @@ There is **one canonical, header-based import format**, not per-software parsers
 - `services/importTemplates.js` — `downloadOrdersTemplate()` / `downloadPaymentsTemplate()` generate a sample `.xlsx` (headers + demo rows + "Notice" sheet).
 - `components/common/ImportModal.jsx` — exposes the "Télécharger le fichier exemple" button and calls `onCommandesImport`.
 
+### Auto-import (watched source file)
+
+Optional, **local-server mode only** (`VITE_API_URL` set). The app watches a configured source file and offers to re-import on launch when a newer version appears:
+- `hooks/useAutoImportWatcher.js` — on mount, polls `GET /auto-import/status`; exposes `pending` when the file signature (name/mtime/size) differs from the last seen/imported.
+- `components/common/AutoImportUpdateModal.jsx` — fetches the file (`GET /auto-import/file`), parses it through `importCommandes` (canonical circuit), and applies the data.
+- `local-server.js` — `autoImportStatus()` + the two `/auto-import/*` routes; the source path/filename come from `settings.autoImport` (configured in Paramètres → « Source automatique »). In browser-only mode the hook is inert.
+
+### Budget editor & nomenclature
+
+- `components/analytique/BudgetEditorModal.jsx` — two-tab modal opened by "Renseigner le budget": OPEX (`EprdBudgetEditor.jsx`, EPRD per ordering account) and CAPEX (`CapexBudgetEditor.jsx`, global-per-year + per-envelope with a non-blocking balance check).
+- `components/reclassement/GestionNomenclature.jsx` — editable analytic **nomenclature** (familles + sous-catégories, Run/Build périmètre). The nomenclature is the source of truth (`DEFAULT_NOMENCLATURE` fallback in `constants/analytiqueConstants.js`); rename/remove **cascade** through engine rules and data (`hooks/useReclassementData.js`, orchestrated in `App.jsx`). `components/reclassement/OrdersPreview.jsx` shows the orders impacted by each rule.
+
 ## Workspace Layout
 
 The workspace root (`Hospifinance-IT/`) contains two sibling folders:
 - `hospifinance-it/` — the application (this is the real project root; run all commands here)
-- `hospifinance-it-data/` — a sibling repo holding data as JSON (`data/*.json`: users, opex, capex, orders, eprd, reclassement, settings). Ships with a **fictional demo dataset**. The app reads/writes these files via the local API server or the GitHub API when sync is enabled. For real data, use a **private** repo.
+- `hospifinance-it-data/` — a sibling repo holding data as JSON (`data/*.json`: users, opex, opex-orders, capex, capex-orders, eprd, reclassement, settings). Ships with a **fictional demo dataset**. The app reads/writes these files via the local API server or the GitHub API when sync is enabled. For real data, use a **private** repo.
 
 ## Development Commands
 
@@ -53,7 +68,7 @@ npm run dev        # nodemon auto-reload Express server
 npm run init-db    # Initialize MongoDB collections
 ```
 
-Windows convenience scripts also exist: `INSTALL.bat`, `START.bat`, `BUILD.bat`, `DEPLOY_GITHUB.bat`.
+Windows convenience scripts also exist: `INSTALL.bat`, `START.bat`, `BUILD.bat`, `START-HOSPIFINANCE-IT.bat` (frontend + local API), and `START_IT.bat` (frontend only on port 5174, localStorage mode).
 
 ## Architecture
 
@@ -119,9 +134,11 @@ Swapping backends only requires changing the service used inside hooks — no co
 - **Imports order**: React → third-party → local contexts → local hooks → local components → utils
 - **Memoization**: `useMemo`/`useCallback` expected on all expensive computations and stable callback references passed as props
 - **Stable filter inputs**: `useTableControls` hook uses `React.memo` and careful closure management to prevent focus loss during multi-character typing — preserve this pattern in table components
-- **No test suite** is configured — manual test cases are in `CAHIER_DE_TESTS.md` and `CAHIER_TESTS_V3.2_COMET.md`
+- **No test suite** is configured — there is no `npm test`. Validate changes manually via the running app
 - **ESLint** enforces React hooks rules and react-refresh warnings; run `npm run lint` before any PR
 - **Dev auto-login**: In localhost/dev mode, authentication is bypassed automatically for faster iteration
+- **Optional authentication**: `AuthContext` reads `isAuthRequired()` (`config/runtimeConfig.js`). When auth is disabled (Paramètres → Sécurité), the app grants direct admin access with no login screen; `updateAuthRequired(true)` clears the session and forces login
+- **⚠️ Password storage (security debt)**: in localStorage/browser mode, `AuthContext` stores passwords with `btoa()` (base64, **reversible — not a hash**). Fine for a local single-station demo, **insufficient for any network deployment**. Before exposing the app on a network, move auth to the `backend/` Express/MongoDB server and implement salted hashing (`bcrypt`/`argon2`) server-side over HTTPS. Do not reintroduce a client-side "hash" and call it secure. See the Sécurité sections of `README.md` and `backend/README.md`.
 
 ## Environment Variables
 
@@ -132,7 +149,6 @@ See `.env.example`. Key variables:
 ## Existing Documentation
 
 Before modifying core logic, consult:
-- `ARCHITECTURE.md` — detailed component patterns, data flow diagrams, optimization guide
-- `AUTHENTICATION.md` — auth system, role permissions, session handling
-- `ORDERS.md` — order lifecycle and budget impact rules
+- `README.md` — feature overview, setup, and persistence modes
 - `CHANGELOG.md` — version history and breaking changes
+- `backend/README.md` — optional Express/MongoDB API setup (Docker, endpoints)

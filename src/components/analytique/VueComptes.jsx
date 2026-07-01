@@ -5,8 +5,10 @@ import {
 } from 'recharts';
 import { formatCurrency } from '../../utils/formatters';
 import { calculateChargeEngagee, getAlertLevelDSI } from '../../utils/calculations';
+import { normalizeCompte, buildEprdMap } from '../../utils/compte';
+import { detectComptesOrphelins } from '../../utils/anomaliesUtils';
 import {
-  listExercices, suppliersForYear, projectsForYear, ordersForYear, getOrderYear,
+  listExercices, suppliersForYear, projectsForYear, ordersForYear, getOrderYear, orderAmounts,
 } from '../../utils/yearCalculations';
 
 const fmt = (n) => formatCurrency(n ?? 0);
@@ -177,9 +179,7 @@ function TableauOPEX({ suppliers, eprd, opexOrders }) {
   const [sortDir,   setSortDir]   = useState('asc');
   const [openCompte, setOpenCompte] = useState(null);
 
-  const eprdMap = useMemo(() =>
-    Object.fromEntries(eprd.map(e => [e.compteOrdonnateur, e])),
-  [eprd]);
+  const eprdMap = useMemo(() => buildEprdMap(eprd), [eprd]);
 
   const ordersBySupplier = useMemo(() => {
     const map = {};
@@ -195,7 +195,7 @@ function TableauOPEX({ suppliers, eprd, opexOrders }) {
   const rows = useMemo(() => {
     const map = new Map();
     suppliers.forEach(s => {
-      const compte = s.compteOrdonnateur;
+      const compte = normalizeCompte(s.compteOrdonnateur);
       if (!compte) return;
       const eprdEntry  = eprdMap[compte];
       const budgetEPRD = eprdEntry?.budgetEPRD || s.budgetAnnuel || 0;
@@ -336,9 +336,7 @@ function TableauCAPEX({ projects, capexOrders, eprd, capexBudgetGlobal = 0 }) {
   const [sortDir,   setSortDir]   = useState('asc');
   const [openCompte, setOpenCompte] = useState(null);
 
-  const eprdMap = useMemo(() =>
-    Object.fromEntries(eprd.map(e => [e.compteOrdonnateur, e])),
-  [eprd]);
+  const eprdMap = useMemo(() => buildEprdMap(eprd), [eprd]);
 
   const ordersByProject = useMemo(() => {
     const map = {};
@@ -354,7 +352,7 @@ function TableauCAPEX({ projects, capexOrders, eprd, capexBudgetGlobal = 0 }) {
   const rows = useMemo(() => {
     const map = new Map();
     projects.forEach(p => {
-      const compte = p.compteOrdonnateur;
+      const compte = normalizeCompte(p.compteOrdonnateur);
       if (!compte) return;
       const eprdEntry  = eprdMap[compte];
       const budgetEPRD = eprdEntry?.budgetEPRD || p.budgetTotal || p.budgetAlloue || 0;
@@ -534,7 +532,7 @@ function TableauCAPEX({ projects, capexOrders, eprd, capexBudgetGlobal = 0 }) {
  */
 const buildEvolution = (entities, orders, exercices, eprdMap) => {
   const compteById = {};
-  entities.forEach(e => { if (e.id != null) compteById[String(e.id)] = e.compteOrdonnateur; });
+  entities.forEach(e => { if (e.id != null) compteById[String(e.id)] = normalizeCompte(e.compteOrdonnateur); });
 
   const map = new Map();
   orders.forEach(o => {
@@ -542,7 +540,8 @@ const buildEvolution = (entities, orders, exercices, eprdMap) => {
     if (!compte) return;
     const y = getOrderYear(o);
     if (!y) return;
-    const charge = (Number(o.mandateNet) || 0) + (Number(o.engagementNonRecu) || 0);
+    const a = orderAmounts(o);
+    const charge = a.depense + a.engagement;
     if (!map.has(compte)) map.set(compte, { compte, byYear: {} });
     const g = map.get(compte);
     g.byYear[y] = (g.byYear[y] || 0) + charge;
@@ -717,13 +716,13 @@ export default function VueComptes({ suppliers = [], projects = [], eprd = [], o
   const opexOrdersF  = useMemo(() => ordersForYear(opexOrders, annee),  [opexOrders, annee]);
   const capexOrdersF = useMemo(() => ordersForYear(capexOrders, annee), [capexOrders, annee]);
 
-  const eprdMap = useMemo(() => Object.fromEntries(eprd.map(e => [e.compteOrdonnateur, e])), [eprd]);
+  const eprdMap = useMemo(() => buildEprdMap(eprd), [eprd]);
 
   // Nombre de comptes NON vides pour l'exercice
   const countComptesNonVides = (entities, getDep, getEng) => {
     const m = new Map();
     entities.forEach(e => {
-      const c = e.compteOrdonnateur; if (!c) return;
+      const c = normalizeCompte(e.compteOrdonnateur); if (!c) return;
       const charge = calculateChargeEngagee(getDep(e), getEng(e));
       const prevv = m.get(c) || { charge: 0, budget: 0 };
       prevv.charge += charge;
@@ -746,6 +745,14 @@ export default function VueComptes({ suppliers = [], projects = [], eprd = [], o
     { id: 'detail',    label: 'Détail par compte', icon: Table2 },
     { id: 'evolution', label: 'Évolution annuelle', icon: TrendingUp },
   ];
+
+  // ── Réconciliation : comptes non appariés réel ↔ budget EPRD ───────────────
+  const orphelins = useMemo(
+    () => detectComptesOrphelins(suppliers, projects, eprd),
+    [suppliers, projects, eprd]
+  );
+  const sansBudget = orphelins.filter(o => o.regle === 'B1');
+  const sansActivite = orphelins.filter(o => o.regle === 'B2');
 
   return (
     <div className="space-y-6 p-4">
@@ -772,19 +779,50 @@ export default function VueComptes({ suppliers = [], projects = [], eprd = [], o
         </div>
       </div>
 
+      {/* Bandeau de réconciliation des comptes */}
+      {orphelins.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="text-amber-800">
+              <p className="font-semibold mb-1">Réconciliation des comptes à vérifier</p>
+              <ul className="list-disc pl-5 space-y-0.5 text-xs">
+                {sansBudget.length > 0 && (
+                  <li>
+                    <strong>{sansBudget.length}</strong> compte(s) avec activité <strong>sans budget EPRD</strong> :{' '}
+                    <span className="font-mono">{sansBudget.slice(0, 6).map(o => o.compte).join(', ')}{sansBudget.length > 6 ? '…' : ''}</span>
+                  </li>
+                )}
+                {sansActivite.length > 0 && (
+                  <li>
+                    <strong>{sansActivite.length}</strong> budget(s) EPRD <strong>sans activité</strong> :{' '}
+                    <span className="font-mono">{sansActivite.slice(0, 6).map(o => o.compte).join(', ')}{sansActivite.length > 6 ? '…' : ''}</span>
+                  </li>
+                )}
+              </ul>
+            </div>
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('hospifinance:open-budget'))}
+              className="shrink-0 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg"
+            >
+              Renseigner le budget
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Sous-onglets */}
-      <div className="flex gap-1 border-b border-gray-200">
+      <div className="inline-flex flex-wrap gap-1 bg-gray-100 p-1 rounded-xl">
         {SUB_TABS.map(tab => {
           const Icon = tab.icon;
           return (
             <button
               key={tab.id}
               onClick={() => setSubTab(tab.id)}
-              className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium border-b-2 transition-colors ${
-                subTab === tab.id ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+              className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                subTab === tab.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-600 hover:bg-white hover:text-gray-900'
               }`}
             >
-              <Icon size={13} />
+              <Icon size={16} />
               {tab.label}
             </button>
           );

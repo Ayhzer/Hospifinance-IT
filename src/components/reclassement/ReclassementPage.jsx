@@ -1,17 +1,17 @@
 import { useState, useMemo } from 'react';
-import { Users, Key, GitBranch, Map as MapIcon, PlayCircle, Loader2, BookOpen, Search, X, AlertTriangle, CheckCircle, Zap, ChevronRight, Lightbulb } from 'lucide-react';
+import { Users, Key, GitBranch, Map as MapIcon, PlayCircle, Loader2, BookOpen, Search, X, AlertTriangle, CheckCircle, Zap, ChevronRight, Lightbulb, Layers } from 'lucide-react';
 import NoticeReclassement from './NoticeReclassement';
 import ReferentielFournisseurs from './ReferentielFournisseurs';
 import ReglesMultiNature from './ReglesMultiNature';
 import ReglesMosCles from './ReglesMosCles';
 import MappingComptes from './MappingComptes';
 import PreviewReclassement from './PreviewReclassement';
-import { reclasser } from '../../utils/reclassementEngine';
+import { reclasser, buildDesignationsByParent } from '../../utils/reclassementEngine';
 import { suggererClassement } from '../../utils/suggestionEngine';
-import { FAMILLE_ANALYTIQUE } from '../../constants/analytiqueConstants';
+import { HORS_PERIMETRE_LABEL, listFamilles } from '../../constants/analytiqueConstants';
+import { normalizeCompte } from '../../utils/compte';
 import { formatCurrency } from '../../utils/formatters';
-
-const FAMILLES_LIST = Object.values(FAMILLE_ANALYTIQUE);
+import GestionNomenclature from './GestionNomenclature';
 
 // ── Moteur de recherche multi-niveaux ─────────────────────────────────────────
 
@@ -166,6 +166,7 @@ const NIVEAUX_CREATION = [
 ];
 
 function NonClassesPanel({ moteur, suppliers, projects, opexOrders = [], capexOrders = [], nomenclature = [], onAddFournisseur, onAddRegleMultiNature, onAddRegleMosCles, onUpdateMappingCompte }) {
+  const FAMILLES_LIST = listFamilles(nomenclature);
   const [selections, setSelections] = useState({});
   const [mapped, setMapped]         = useState(new Set());
   const [pending, setPending]       = useState(new Set());
@@ -175,6 +176,12 @@ function NonClassesPanel({ moteur, suppliers, projects, opexOrders = [], capexOr
   const nonClasses = useMemo(() => {
     if (!moteur?.referentielFournisseurs) return [];
     const grouped = new Map();
+
+    // Désignations agrégées des commandes par parent → les règles de mots-clés (N3)
+    // s'appliquent comme dans les vues (sinon un fournisseur classé uniquement par
+    // mot-clé resterait listé « à classer »).
+    const desOpex  = buildDesignationsByParent(opexOrders);
+    const desCapex = buildDesignationsByParent(capexOrders);
 
     const tryReclasser = (nom, designation, compte) => {
       try {
@@ -187,7 +194,8 @@ function NonClassesPanel({ moteur, suppliers, projects, opexOrders = [], capexOr
     for (const sup of (suppliers || [])) {
       const nom = sup.supplier;
       if (!nom) continue;
-      const result = tryReclasser(nom, nom, sup.compteOrdonnateur);
+      const designation = [nom, desOpex[String(sup.id)]].filter(Boolean).join(' ');
+      const result = tryReclasser(nom, designation, sup.compteOrdonnateur);
       if (result.famille !== 'Non classé') continue;
       if (!grouped.has(nom)) grouped.set(nom, { nom, compte: sup.compteOrdonnateur || '', charge: 0, type: 'OPEX', parentIds: [] });
       const g = grouped.get(nom);
@@ -198,7 +206,8 @@ function NonClassesPanel({ moteur, suppliers, projects, opexOrders = [], capexOr
     for (const p of (projects || [])) {
       const nom = p.fournisseur || p.project;
       if (!nom || nom === '—') continue;
-      const result = tryReclasser(nom, nom, p.compteOrdonnateur);
+      const designation = [nom, desCapex[String(p.id)]].filter(Boolean).join(' ');
+      const result = tryReclasser(nom, designation, p.compteOrdonnateur);
       if (result.famille !== 'Non classé') continue;
       if (!grouped.has(nom)) grouped.set(nom, { nom, compte: p.compteOrdonnateur || '', charge: 0, type: 'CAPEX', parentIds: [] });
       const g = grouped.get(nom);
@@ -209,7 +218,7 @@ function NonClassesPanel({ moteur, suppliers, projects, opexOrders = [], capexOr
     return [...grouped.values()]
       .filter(e => !mapped.has(e.nom))
       .sort((a, b) => b.charge - a.charge);
-  }, [suppliers, projects, moteur, mapped]);
+  }, [suppliers, projects, moteur, mapped, opexOrders, capexOrders]);
 
   // Commandes visibles pour le fournisseur déplié
   const expandedOrders = useMemo(() => {
@@ -536,6 +545,7 @@ const TABS = [
   { id: 'multinature',  label: 'Règles contextuelles',      icon: GitBranch,     desc: 'Niveau 2' },
   { id: 'moscles',      label: 'Mots-clés',                 icon: Key,           desc: 'Niveau 3' },
   { id: 'mapping',      label: 'Mapping comptes',            icon: MapIcon,       desc: 'Niveau 4 — Fallback' },
+  { id: 'nomenclature', label: 'Catégories & sous-catégories', icon: Layers,      desc: 'Référentiel' },
   { id: 'preview',      label: 'Simuler & appliquer',        icon: PlayCircle,    desc: 'Test & application' },
 ];
 
@@ -561,9 +571,66 @@ export default function ReclassementPage({
   onUpdateMappingCompte,
   onApplyReclassement,
   onApplyReclassementCapex,
+  onAddFamille,
+  onRenameFamille,
+  onRemoveFamille,
+  onAddSousCategorie,
+  onRenameSousCategorie,
+  onRemoveSousCategorie,
 }) {
   const [activeTab, setActiveTab] = useState('nonclasses');
   const [showNotice, setShowNotice] = useState(false);
+
+  // Commandes enrichies (fournisseur + compte + désignation résolus depuis le
+  // parent) — sert à prévisualiser les commandes concernées par chaque règle.
+  const enrichedOrders = useMemo(() => {
+    const supById = {}; (suppliers || []).forEach(s => { supById[String(s.id)] = s; });
+    const projById = {}; (projects || []).forEach(p => { projById[String(p.id)] = p; });
+    const enrich = (o, parentMap, nameKey) => {
+      const parent = o.parentId != null ? parentMap[String(o.parentId)] : null;
+      return {
+        ...o,
+        fournisseur: o._supplierName || parent?.[nameKey] || parent?.fournisseur || o.fournisseur || '',
+        compteOrdonnateur: o.compteOrdonnateur || parent?.compteOrdonnateur || '',
+        designation: o.description || o.designation || '',
+      };
+    };
+    return [
+      ...(opexOrders || []).map(o => enrich(o, supById, 'supplier')),
+      ...(capexOrders || []).map(o => enrich(o, projById, 'project')),
+    ];
+  }, [opexOrders, capexOrders, suppliers, projects]);
+
+  // Comptes du mapping (N4) : tous les comptes présents dans les données réelles
+  // (fusionnés avec les affectations existantes), pas seulement ceux déjà mappés.
+  const mappingRows = useMemo(() => {
+    const byCompte = new Map();
+    (moteur.mappingComptes || []).forEach(m => {
+      const c = normalizeCompte(m.compte);
+      if (!c) return;
+      byCompte.set(c, { compte: c, libelleCompte: m.libelleCompte || '', familleDefaut: m.familleDefaut || HORS_PERIMETRE_LABEL });
+    });
+    const addCompte = (compte, libelle) => {
+      const c = normalizeCompte(compte);
+      if (!c) return;
+      const cur = byCompte.get(c);
+      if (!cur) byCompte.set(c, { compte: c, libelleCompte: libelle || '', familleDefaut: HORS_PERIMETRE_LABEL });
+      else if (libelle && !cur.libelleCompte) cur.libelleCompte = libelle;
+    };
+    (suppliers || []).forEach(s => addCompte(s.compteOrdonnateur, s.libelleCompte || s.category));
+    (projects || []).forEach(p => addCompte(p.compteOrdonnateur, p.libelleCompte));
+    return [...byCompte.values()].sort((a, b) => a.compte.localeCompare(b.compte));
+  }, [moteur.mappingComptes, suppliers, projects]);
+
+  // Nombre d'éléments (fournisseurs + projets) affectés à chaque famille — sert
+  // d'avertissement avant renommage/suppression d'une catégorie.
+  const usageByFamille = useMemo(() => {
+    const m = {};
+    const add = (f) => { const v = String(f || '').trim(); if (v) m[v] = (m[v] || 0) + 1; };
+    (suppliers || []).forEach(s => add(s.familleAnalytique));
+    (projects || []).forEach(p => add(p.familleAnalytique));
+    return m;
+  }, [suppliers, projects]);
 
   if (loading) {
     return (
@@ -661,6 +728,7 @@ export default function ReclassementPage({
             <ReferentielFournisseurs
               referentiel={moteur.referentielFournisseurs || []}
               nomenclature={moteur.nomenclature || []}
+              orders={enrichedOrders}
               onAdd={onAddFournisseur}
               onUpdate={onUpdateFournisseur}
               onDelete={onDeleteFournisseur}
@@ -670,6 +738,7 @@ export default function ReclassementPage({
             <ReglesMultiNature
               regles={moteur.reglesMultiNature || []}
               nomenclature={moteur.nomenclature || []}
+              orders={enrichedOrders}
               onAdd={onAddRegleMultiNature}
               onUpdate={onUpdateRegleMultiNature}
               onDelete={onDeleteRegleMultiNature}
@@ -680,6 +749,7 @@ export default function ReclassementPage({
             <ReglesMosCles
               regles={moteur.reglesMosCles || []}
               nomenclature={moteur.nomenclature || []}
+              orders={enrichedOrders}
               onAdd={onAddRegleMosCles}
               onUpdate={onUpdateRegleMosCles}
               onDelete={onDeleteRegleMosCles}
@@ -688,17 +758,37 @@ export default function ReclassementPage({
           )}
           {activeTab === 'mapping' && (
             <MappingComptes
-              mappingComptes={moteur.mappingComptes || []}
+              mappingComptes={mappingRows}
+              orders={enrichedOrders}
+              nomenclature={moteur.nomenclature || []}
               onUpdate={onUpdateMappingCompte}
+            />
+          )}
+          {activeTab === 'nomenclature' && (
+            <GestionNomenclature
+              nomenclature={moteur.nomenclature || []}
+              usageByFamille={usageByFamille}
+              onAddFamille={onAddFamille}
+              onRenameFamille={onRenameFamille}
+              onRemoveFamille={onRemoveFamille}
+              onAddSousCategorie={onAddSousCategorie}
+              onRenameSousCategorie={onRenameSousCategorie}
+              onRemoveSousCategorie={onRemoveSousCategorie}
             />
           )}
           {activeTab === 'preview' && (
             <PreviewReclassement
               moteur={moteur}
               suppliers={suppliers}
+              orders={enrichedOrders}
+              nomenclature={moteur.nomenclature || []}
               onApply={onApplyReclassement}
               projects={projects}
               onApplyCapex={onApplyReclassementCapex}
+              onAddFournisseur={onAddFournisseur}
+              onAddRegleMultiNature={onAddRegleMultiNature}
+              onAddRegleMosCles={onAddRegleMosCles}
+              onUpdateMappingCompte={onUpdateMappingCompte}
             />
           )}
         </div>

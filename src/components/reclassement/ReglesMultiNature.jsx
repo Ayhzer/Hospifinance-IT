@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react';
 import { Plus, Pencil, Trash2, GripVertical, Check, ChevronUp, ChevronDown, Search } from 'lucide-react';
-import { FAMILLE_ANALYTIQUE } from '../../constants/analytiqueConstants';
+import { listFamilles } from '../../constants/analytiqueConstants';
+import { lineMatchesRule } from '../../utils/reclassementEngine';
+import OrdersPreview from './OrdersPreview';
 
-const FAMILLES = Object.values(FAMILLE_ANALYTIQUE);
 const CHAMPS = ['COMPTE', 'FOURNISSEUR', 'DESIGNATION'];
 const OPERATEURS = ['=', 'CONTIENT='];
 
-const EMPTY_FORM = { label: '', conditions: '', famille: FAMILLES[0], sousCategorie: '' };
+const EMPTY_FORM = { label: '', conditions: '', famille: '', sousCategorie: '' };
 
 const ConditionBuilder = ({ value, onChange }) => {
   const [clauses, setClauses] = useState(() => {
@@ -55,7 +56,8 @@ const ConditionBuilder = ({ value, onChange }) => {
   );
 };
 
-export default function ReglesMultiNature({ regles = [], nomenclature = [], onAdd, onUpdate, onDelete, onReorder }) {
+export default function ReglesMultiNature({ regles = [], nomenclature = [], orders = [], onAdd, onUpdate, onDelete, onReorder }) {
+  const FAMILLES = useMemo(() => listFamilles(nomenclature), [nomenclature]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
@@ -71,7 +73,7 @@ export default function ReglesMultiNature({ regles = [], nomenclature = [], onAd
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.conditions.trim()) return;
-    await onAdd({ label: form.label, conditions: form.conditions, famille: form.famille, sousCategorie: form.sousCategorie });
+    await onAdd({ label: form.label, conditions: form.conditions, famille: form.famille || FAMILLES[0], sousCategorie: form.sousCategorie });
     setForm(EMPTY_FORM);
     setShowForm(false);
   };
@@ -146,7 +148,7 @@ export default function ReglesMultiNature({ regles = [], nomenclature = [], onAd
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Famille analytique</label>
               <select
-                value={form.famille}
+                value={form.famille || FAMILLES[0]}
                 onChange={e => setForm(f => ({ ...f, famille: e.target.value, sousCategorie: '' }))}
                 className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
@@ -226,30 +228,35 @@ export default function ReglesMultiNature({ regles = [], nomenclature = [], onAd
                   </div>
                 </div>
               ) : (
-                <div className="flex items-start gap-3">
-                  <GripVertical size={14} className="text-gray-300 flex-shrink-0 mt-0.5 cursor-grab" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="text-xs font-medium text-gray-700">{regle.label}</span>
-                      <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 text-xs rounded">
-                        {regle.famille}{regle.sousCategorie ? ` › ${regle.sousCategorie}` : ''}
-                      </span>
+                <div>
+                  <div className="flex items-start gap-3">
+                    <GripVertical size={14} className="text-gray-300 flex-shrink-0 mt-0.5 cursor-grab" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span className="text-xs font-medium text-gray-700">{regle.label}</span>
+                        <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 text-xs rounded">
+                          {regle.famille}{regle.sousCategorie ? ` › ${regle.sousCategorie}` : ''}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-400 font-mono truncate" title={regle.conditions}>{regle.conditions}</p>
                     </div>
-                    <p className="text-xs text-gray-400 font-mono truncate" title={regle.conditions}>{regle.conditions}</p>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button onClick={() => index > 0 && onReorder(index, index - 1)} disabled={index === 0} className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-30">
+                        <ChevronUp size={13} />
+                      </button>
+                      <button onClick={() => index < sorted.length - 1 && onReorder(index, index + 1)} disabled={index === sorted.length - 1} className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-30">
+                        <ChevronDown size={13} />
+                      </button>
+                      <button onClick={() => startEdit(regle)} className="p-1 text-gray-400 hover:text-blue-600">
+                        <Pencil size={13} />
+                      </button>
+                      <button onClick={() => onDelete(regle.id)} className="p-1 text-gray-400 hover:text-red-600">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button onClick={() => index > 0 && onReorder(index, index - 1)} disabled={index === 0} className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-30">
-                      <ChevronUp size={13} />
-                    </button>
-                    <button onClick={() => index < sorted.length - 1 && onReorder(index, index + 1)} disabled={index === sorted.length - 1} className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-30">
-                      <ChevronDown size={13} />
-                    </button>
-                    <button onClick={() => startEdit(regle)} className="p-1 text-gray-400 hover:text-blue-600">
-                      <Pencil size={13} />
-                    </button>
-                    <button onClick={() => onDelete(regle.id)} className="p-1 text-gray-400 hover:text-red-600">
-                      <Trash2 size={13} />
-                    </button>
+                  <div className="pl-7">
+                    <OrdersPreview orders={orders.filter(o => lineMatchesRule(o, 'multinature', regle))} />
                   </div>
                 </div>
               )}

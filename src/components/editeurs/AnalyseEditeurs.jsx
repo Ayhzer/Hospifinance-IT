@@ -906,12 +906,12 @@ const EditeurDetail = ({ editeur, totalGlobal }) => {
 
       {/* Graphiques */}
       <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex gap-1 mb-3 border-b border-gray-100 pb-2">
+        <div className="inline-flex flex-wrap gap-1 mb-3 bg-gray-100 p-1 rounded-xl">
           {CHART_TABS.map(t => (
             <button key={t.id} onClick={() => setActiveChart(t.id)}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1 rounded transition-colors
-                ${activeChart === t.id ? 'bg-indigo-100 text-indigo-700 font-medium' : 'text-gray-500 hover:bg-gray-100'}`}>
-              <t.icon size={11} />
+              className={`flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg transition-colors
+                ${activeChart === t.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}>
+              <t.icon size={16} />
               {t.label}
             </button>
           ))}
@@ -923,11 +923,11 @@ const EditeurDetail = ({ editeur, totalGlobal }) => {
 
       {/* Drill + Nature */}
       <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex gap-1 mb-3 border-b border-gray-100 pb-2">
+        <div className="inline-flex flex-wrap gap-1 mb-3 bg-gray-100 p-1 rounded-xl">
           {DETAIL_TABS.map(t => (
             <button key={t.id} onClick={() => setActiveDetail(t.id)}
-              className={`text-xs px-3 py-1 rounded transition-colors
-                ${activeDetail === t.id ? 'bg-indigo-100 text-indigo-700 font-medium' : 'text-gray-500 hover:bg-gray-100'}`}>
+              className={`text-sm font-semibold px-4 py-2 rounded-lg transition-colors
+                ${activeDetail === t.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}>
               {t.label}
             </button>
           ))}
@@ -1230,11 +1230,11 @@ const EditeurGroupDetail = ({ editeurs: group, totalGlobal, onRemove }) => {
 
       {/* Graphiques */}
       <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex gap-1 mb-3 border-b border-gray-100 pb-2">
+        <div className="inline-flex flex-wrap gap-1 mb-3 bg-gray-100 p-1 rounded-xl">
           {CHART_TABS_GRP.map(t => (
             <button key={t.id} onClick={() => setActiveChart(t.id)}
-              className={`text-xs px-3 py-1 rounded transition-colors
-                ${activeChart === t.id ? 'bg-violet-100 text-violet-700 font-medium' : 'text-gray-500 hover:bg-gray-100'}`}>
+              className={`text-sm font-semibold px-4 py-2 rounded-lg transition-colors
+                ${activeChart === t.id ? 'bg-violet-600 text-white shadow-sm' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}>
               {t.label}
             </button>
           ))}

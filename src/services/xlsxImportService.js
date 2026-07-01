@@ -9,6 +9,7 @@
 import * as XLSX from 'xlsx';
 import { COMPTE_TO_FAMILLE, HORS_PERIMETRE_LABEL } from '../constants/analytiqueConstants';
 import { reclasser, normaliseFournisseur } from '../utils/reclassementEngine';
+import { normalizeCompte } from '../utils/compte';
 import { ACCOUNTING, getLineType } from '../config/accounting';
 import { CANONICAL_ORDERS_COLUMNS, buildHeaderResolver } from './importSchema';
 
@@ -128,7 +129,7 @@ export const importCommandes = async (file, options = {}) => {
         if (gestionnaire !== managerFilter) { stats.skipped++; continue; }
       }
 
-      const compte = normaliseStr(get(r, 'compteOrdonnateur'));
+      const compte = normalizeCompte(get(r, 'compteOrdonnateur'));
       const lineType = getLineType(compte);
       if (!lineType) { stats.skipped++; continue; }
 

@@ -3,7 +3,7 @@
  */
 
 import { useState } from 'react';
-import { Settings, Palette, Columns, Shield, Users, RotateCcw, Save, FileText, Trash2, Github, RefreshCw, Upload, CheckCircle, XCircle, Database, AlertTriangle, Pencil, Plus, X, Eye, EyeOff, PanelLeft } from 'lucide-react';
+import { Settings, Palette, Columns, Shield, Users, RotateCcw, Save, FileText, Trash2, Github, RefreshCw, Upload, CheckCircle, XCircle, Database, AlertTriangle, Pencil, Plus, X, Eye, EyeOff, PanelLeft, HardDriveDownload } from 'lucide-react';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
 import { ConfirmDialog } from '../common/ConfirmDialog';
@@ -13,6 +13,7 @@ import { usePermissions } from '../../contexts/PermissionsContext';
 import CustomColumnsManager from './CustomColumnsManager';
 import { NAV_TABS } from '../dashboard/SidebarNavigation';
 import * as github from '../../services/githubStorageService';
+import { getAutoImportStatus } from '../../services/apiService';
 import { loadOpexData, loadCapexData, loadOpexOrders, loadCapexOrders, loadAuthUsers, loadSettings } from '../../services/storageService';
 
 const SETTINGS_TABS = [
@@ -25,8 +26,12 @@ const SETTINGS_TABS = [
   { id: 'users', label: 'Utilisateurs', icon: Users },
   { id: 'logs', label: 'Logs', icon: FileText },
   { id: 'github', label: 'GitHub', icon: Github },
+  { id: 'autoImport', label: 'Source automatique', icon: HardDriveDownload },
   { id: 'data', label: 'Données', icon: Database },
 ];
+
+// Mode serveur local actif (lecture du système de fichiers possible)
+const USE_API = !!import.meta.env.VITE_API_URL;
 
 const COLOR_LABELS = {
   primary: 'Couleur principale',
@@ -185,8 +190,8 @@ const ListEditor = ({ title, description, items = [], onAdd, onRename, onRemove,
 };
 
 export const SettingsPanel = ({ onClearOpex, onClearCapex, onRenameEnveloppe, onRenameOpexSupplier, onRenameOpexCategory }) => {
-  const { settings, isSettingsOpen, setIsSettingsOpen, updateColors, updateSettings, toggleOpexColumn, toggleCapexColumn, updateRules, toggleTabVisibility, resetSettings, addCapexEnveloppe, renameCapexEnveloppe, removeCapexEnveloppe, addOpexSupplier, renameOpexSupplier, removeOpexSupplier, addOpexCategory, renameOpexCategory, removeOpexCategory } = useSettings();
-  const { users, addUser, deleteUser, toggleUserDisabled, changePassword, updateUserRole, isAdmin, isSuperAdmin, authLogs, clearLogs } = useAuth();
+  const { settings, isSettingsOpen, setIsSettingsOpen, updateColors, updateSettings, toggleOpexColumn, toggleCapexColumn, updateRules, toggleTabVisibility, resetSettings, addCapexEnveloppe, renameCapexEnveloppe, removeCapexEnveloppe, addOpexSupplier, renameOpexSupplier, removeOpexSupplier, addOpexCategory, renameOpexCategory, removeOpexCategory, updateAutoImport } = useSettings();
+  const { users, addUser, deleteUser, toggleUserDisabled, changePassword, updateUserRole, isAdmin, isSuperAdmin, authLogs, clearLogs, authRequired, updateAuthRequired } = useAuth();
   const { canManageColumns } = usePermissions();
   const [activeSettingsTab, setActiveSettingsTab] = useState('appearance');
   const [newUsername, setNewUsername] = useState('');
@@ -205,6 +210,24 @@ export const SettingsPanel = ({ onClearOpex, onClearCapex, onRenameEnveloppe, on
   const [ghTestStatus, setGhTestStatus] = useState(null); // { success, message }
   const [ghSyncing, setGhSyncing] = useState(false);
   const [ghPushing, setGhPushing] = useState(false);
+  // ---- État Source automatique ----
+  const [autoChecking, setAutoChecking] = useState(false);
+  const [autoStatus, setAutoStatus] = useState(null); // résultat de getAutoImportStatus
+
+  const autoImport = settings.autoImport || {};
+
+  const handleAutoCheck = async () => {
+    setAutoChecking(true);
+    setAutoStatus(null);
+    try {
+      const status = await getAutoImportStatus();
+      setAutoStatus(status);
+    } catch (err) {
+      setAutoStatus({ error: err.message });
+    } finally {
+      setAutoChecking(false);
+    }
+  };
 
   const handleAddUser = async () => {
     if (!newUsername || !newPassword) {
@@ -333,6 +356,8 @@ export const SettingsPanel = ({ onClearOpex, onClearCapex, onRenameEnveloppe, on
           if ((tab.id === 'users' || tab.id === 'logs' || tab.id === 'listes') && !isAdmin) return false;
           // Filtrer données pour superadmin uniquement
           if (tab.id === 'data' && !isSuperAdmin) return false;
+          // Source automatique : admin (le mapping reste configurable même hors serveur local)
+          if (tab.id === 'autoImport' && !isAdmin) return false;
           return true;
         }).map(tab => {
           const Icon = tab.icon;
@@ -572,6 +597,26 @@ export const SettingsPanel = ({ onClearOpex, onClearCapex, onRenameEnveloppe, on
             {userError && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
                 {userError}
+              </div>
+            )}
+
+            {isSuperAdmin && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={authRequired}
+                    onChange={(e) => updateAuthRequired(e.target.checked)}
+                  />
+                  <span>
+                    <span className="block text-sm font-semibold text-gray-800">Authentification requise (connexion par login / mot de passe)</span>
+                    <span className="block text-xs text-gray-500 mt-0.5">
+                      Décoché : l'application est en accès direct (administrateur), sans écran de connexion.
+                      Activer/désactiver prend effet immédiatement.
+                    </span>
+                  </span>
+                </label>
               </div>
             )}
 
@@ -888,6 +933,157 @@ export const SettingsPanel = ({ onClearOpex, onClearCapex, onRenameEnveloppe, on
                 <li>Chaque modification est automatiquement poussée vers GitHub (délai 800ms)</li>
                 <li>Utilisez <strong>«&nbsp;Pousser tout&nbsp;»</strong> lors de la première configuration pour uploader vos données existantes</li>
                 <li>Le token est stocké localement dans votre navigateur (jamais transmis ailleurs)</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* Source d'import automatique */}
+        {activeSettingsTab === 'autoImport' && (
+          <div className="space-y-5">
+            {!USE_API && (
+              <div className="flex items-start gap-2 p-3 rounded-lg text-sm bg-amber-50 border border-amber-200 text-amber-800">
+                <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+                <span>
+                  Le serveur local n'est pas actif (mode navigateur seul). Vous pouvez enregistrer le chemin ci-dessous,
+                  mais la détection et l'import automatiques ne fonctionneront qu'une fois l'application lancée avec le serveur local
+                  (<code>VITE_API_URL</code> défini / <code>npm start</code>).
+                </span>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800">Mise à jour automatique depuis un fichier source</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  L'outil surveille un fichier d'extraction et propose une mise à jour des données dès qu'une nouvelle version est détectée.
+                </p>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <span className="text-xs text-gray-600">Activer</span>
+                <input
+                  type="checkbox"
+                  checked={!!autoImport.enabled}
+                  onChange={e => updateAutoImport({ enabled: e.target.checked })}
+                  className="w-4 h-4"
+                />
+              </label>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Chemin du dossier (ou fichier) source *</label>
+              <input
+                type="text"
+                value={autoImport.path || ''}
+                onChange={e => updateAutoImport({ path: e.target.value })}
+                placeholder="\\serveur\partage\extraction  ou  D:\exports"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                Le fichier doit respecter le format d'import canonique (colonnes attendues). Chemin accessible depuis le poste qui exécute le serveur local.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Nom de fichier attendu</label>
+                <input
+                  type="text"
+                  value={autoImport.fileName || ''}
+                  onChange={e => updateAutoImport({ fileName: e.target.value })}
+                  placeholder="extraction.xlsx (vide = .xlsx le plus récent)"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Journal d'extraction (optionnel)</label>
+                <input
+                  type="text"
+                  value={autoImport.logName || ''}
+                  onChange={e => updateAutoImport({ logName: e.target.value })}
+                  placeholder="extraction.log"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+                <p className="text-[10px] text-gray-400 mt-0.5">Si fourni, sert à détecter la version et à éviter un import en cours d'écriture.</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Exercice par défaut</label>
+                <input
+                  type="text"
+                  value={autoImport.exercice || ''}
+                  onChange={e => updateAutoImport({ exercice: e.target.value })}
+                  placeholder="ex: 2026 (vide = toutes les années)"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none sm:mt-6">
+                <input
+                  type="checkbox"
+                  checked={!!autoImport.convertHT}
+                  onChange={e => updateAutoImport({ convertHT: e.target.checked })}
+                  className="accent-indigo-600"
+                />
+                Convertir montants TTC → HT
+              </label>
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<RefreshCw size={14} className={autoChecking ? 'animate-spin' : ''} />}
+                onClick={handleAutoCheck}
+                disabled={autoChecking || !autoImport.path || !USE_API}
+              >
+                {autoChecking ? 'Vérification...' : 'Vérifier maintenant'}
+              </Button>
+            </div>
+
+            {/* Résultat de la vérification */}
+            {autoStatus && (
+              autoStatus.error ? (
+                <div className="flex items-start gap-2 p-3 rounded-lg text-sm bg-red-50 text-red-800">
+                  <XCircle size={16} className="flex-shrink-0 mt-0.5" />
+                  <span>Erreur : {autoStatus.error}</span>
+                </div>
+              ) : !autoStatus.exists ? (
+                <div className="flex items-start gap-2 p-3 rounded-lg text-sm bg-yellow-50 text-yellow-800">
+                  <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+                  <span>Aucun fichier trouvé à cet emplacement. Vérifiez le chemin et l'accès depuis le serveur local.</span>
+                </div>
+              ) : (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-900 space-y-1">
+                  <div className="flex items-center gap-2 font-medium">
+                    <CheckCircle size={16} /> Fichier détecté : {autoStatus.fileName}
+                  </div>
+                  <ul className="text-xs text-green-800 ml-6 list-disc">
+                    {autoStatus.logTimestamp && (
+                      <li>Dernière extraction : {autoStatus.logTimestamp.replace('T', ' ')}{autoStatus.lineCount != null ? ` — ${autoStatus.lineCount} lignes` : ''}</li>
+                    )}
+                    <li>Taille : {(autoStatus.size / 1024 / 1024).toFixed(2)} Mo</li>
+                    {!autoStatus.ready && <li className="text-orange-700 font-medium">Extraction en cours — import différé jusqu'à la fin.</li>}
+                  </ul>
+                </div>
+              )
+            )}
+
+            {/* Dernier import enregistré */}
+            <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600">
+              <strong>Dernier import automatique :</strong>{' '}
+              {autoImport.lastImport
+                ? `${autoImport.lastImport.fileName || ''} (${new Date(autoImport.lastImport.importedAt).toLocaleString('fr-FR')})`
+                : 'aucun pour le moment'}
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800">
+              <strong>Fonctionnement :</strong>
+              <ul className="mt-1 space-y-0.5 list-disc list-inside">
+                <li>À chaque lancement, la version du fichier est comparée au dernier import.</li>
+                <li>Si une nouvelle version est disponible, une fenêtre propose la mise à jour des données.</li>
+                <li>« Plus tard » masque la proposition jusqu'à la prochaine version du fichier.</li>
+                <li>Nécessite le serveur local — indisponible en navigateur seul.</li>
               </ul>
             </div>
           </div>

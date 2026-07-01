@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { Check, X, Search } from 'lucide-react';
-import { FAMILLE_ANALYTIQUE } from '../../constants/analytiqueConstants';
+import { listFamilles } from '../../constants/analytiqueConstants';
+import { lineMatchesRule } from '../../utils/reclassementEngine';
+import OrdersPreview from './OrdersPreview';
 
-const FAMILLES = Object.values(FAMILLE_ANALYTIQUE);
-
-export default function MappingComptes({ mappingComptes = [], onUpdate }) {
+export default function MappingComptes({ mappingComptes = [], orders = [], nomenclature = [], onUpdate }) {
+  const FAMILLES = useMemo(() => listFamilles(nomenclature), [nomenclature]);
   const [editing, setEditing] = useState(null); // { compte, value }
   const [search, setSearch] = useState('');
 
@@ -17,12 +18,12 @@ export default function MappingComptes({ mappingComptes = [], onUpdate }) {
     );
   }, [mappingComptes, search]);
 
-  const startEdit = (compte, current) => setEditing({ compte, value: current });
+  const startEdit = (compte, current, libelle) => setEditing({ compte, value: current, libelle });
   const cancelEdit = () => setEditing(null);
 
   const saveEdit = async () => {
     if (!editing) return;
-    await onUpdate(editing.compte, editing.value);
+    await onUpdate(editing.compte, editing.value, editing.libelle);
     setEditing(null);
   };
 
@@ -63,8 +64,10 @@ export default function MappingComptes({ mappingComptes = [], onUpdate }) {
           <tbody>
             {filtered.map(m => {
               const isEditing = editing?.compte === m.compte;
+              const matched = orders.filter(o => lineMatchesRule(o, 'mapping', m));
               return (
-                <tr key={m.compte} className="border-b hover:bg-gray-50">
+                <Fragment key={m.compte}>
+                <tr className="border-b hover:bg-gray-50">
                   <td className="px-3 py-2 border font-mono text-xs text-gray-500">{m.compte}</td>
                   <td className="px-3 py-2 border text-xs text-gray-700">{m.libelleCompte}</td>
                   <td className="px-3 py-2 border">
@@ -89,7 +92,7 @@ export default function MappingComptes({ mappingComptes = [], onUpdate }) {
                     ) : (
                       <button
                         className="text-xs text-left w-full px-2 py-1 rounded hover:bg-blue-50 hover:text-blue-700 transition-colors"
-                        onClick={() => startEdit(m.compte, m.familleDefaut)}
+                        onClick={() => startEdit(m.compte, m.familleDefaut, m.libelleCompte)}
                       >
                         <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-xs">
                           {m.familleDefaut}
@@ -98,6 +101,12 @@ export default function MappingComptes({ mappingComptes = [], onUpdate }) {
                     )}
                   </td>
                 </tr>
+                <tr>
+                  <td colSpan={3} className="border-b border-gray-100 px-3 py-1 bg-gray-50/40">
+                    <OrdersPreview orders={matched} />
+                  </td>
+                </tr>
+                </Fragment>
               );
             })}
           </tbody>

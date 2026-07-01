@@ -106,11 +106,15 @@ docker exec -it hospifinance-mongodb mongosh -u admin -p hospifinance2024 --auth
 
 ⚠️ **IMPORTANT pour la production** :
 1. Changez tous les mots de passe par défaut
-2. Changez le `JWT_SECRET` dans `.env`
-3. Utilisez HTTPS
-4. Configurez correctement CORS
-5. Ajoutez des rate limiters
-6. Activez les logs d'audit
+2. **Hachez les mots de passe côté serveur** avec un algorithme salé (`bcrypt` / `argon2`).
+   Le mode navigateur/localStorage du frontend se contente d'un encodage **base64**
+   (réversible, non sécurisé) : il ne doit **jamais** servir de mécanisme d'authentification
+   sur un déploiement réseau. Le backend est le point où implémenter le vrai hachage.
+3. Changez le `JWT_SECRET` dans `.env`
+4. Utilisez HTTPS
+5. Configurez correctement CORS
+6. Ajoutez des rate limiters
+7. Activez les logs d'audit
 
 ## Migration des données
 

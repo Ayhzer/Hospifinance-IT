@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { DEFAULT_NOMENCLATURE, HORS_PERIMETRE_LABEL } from '../constants/analytiqueConstants';
+import { normalizeCompte } from '../utils/compte';
 
 const STORAGE_KEY = 'hospifinance_reclassement';
 
 const EMPTY_MOTEUR = {
-  nomenclature: [],
+  nomenclature: DEFAULT_NOMENCLATURE,
   referentielFournisseurs: [],
   reglesMultiNature: [],
   reglesMosCles: [],
@@ -27,6 +29,10 @@ const condArrayToStr = (conds) => {
 /** Normalise les champs v6 (script) vers les champs UI (composants React) */
 const normaliseMoteur = (data) => ({
   ...data,
+  // Nomenclature : celle du dépôt prime ; sinon, défaut benchmark intégré.
+  nomenclature: (data.nomenclature && data.nomenclature.length)
+    ? data.nomenclature
+    : DEFAULT_NOMENCLATURE,
   referentielFournisseurs: (data.referentielFournisseurs || []).map(f => ({
     ...f,
     nom:           f.nom          ?? f.fournisseur   ?? '',
@@ -75,6 +81,16 @@ export const useReclassementData = () => {
   const [loading, setLoading] = useState(true);
   const [error] = useState(null);
 
+  // Référence toujours à jour vers le moteur courant : les mutateurs lisent
+  // `moteurRef.current` (et non la closure `moteur`) afin que des écritures
+  // ENCHAÎNÉES (ex. « Tout mapper » qui boucle sur N créations) se composent
+  // correctement au lieu de repartir d'un état figé → seule la dernière gagnait.
+  const moteurRef = useRef(EMPTY_MOTEUR);
+  const setMoteurSynced = useCallback((next) => {
+    moteurRef.current = next;
+    setMoteur(next);
+  }, []);
+
   const apiUrl = import.meta.env.VITE_API_URL;
 
   // Chargement initial
@@ -83,22 +99,24 @@ export const useReclassementData = () => {
     if (apiUrl) {
       fetch(`${apiUrl}/reclassement`)
         .then(r => r.ok ? r.json() : Promise.reject(r.status))
-        .then(data => { setMoteur(normaliseMoteur(data)); setLoading(false); })
+        .then(data => { setMoteurSynced(normaliseMoteur(data)); setLoading(false); })
         .catch(() => {
           // Serveur non disponible ou route absente — fallback localStorage silencieux
           const local = readLocal();
-          if (local) setMoteur(normaliseMoteur(local));
+          if (local) setMoteurSynced(normaliseMoteur(local));
           setLoading(false);
         });
     } else {
       const local = readLocal();
-      if (local) setMoteur(normaliseMoteur(local));
+      if (local) setMoteurSynced(normaliseMoteur(local));
       setLoading(false);
     }
-  }, [apiUrl]);
+  }, [apiUrl, setMoteurSynced]);
 
-  // Persistance (API ou localStorage)
+  // Persistance (API ou localStorage). Met à jour la ref + l'état AVANT le
+  // réseau pour que les opérations enchaînées partent du dernier état.
   const persist = useCallback(async (updated) => {
+    setMoteurSynced(updated);
     if (apiUrl) {
       const token = localStorage.getItem('authToken');
       await fetch(`${apiUrl}/reclassement`, {
@@ -109,97 +127,181 @@ export const useReclassementData = () => {
     } else {
       writeLocal(updated);
     }
-    setMoteur(updated);
-  }, [apiUrl]);
+  }, [apiUrl, setMoteurSynced]);
 
   // ── Référentiel fournisseurs ────────────────────────────────────────────────
 
   const addFournisseur = useCallback(async (fournisseur) => {
+    const cur = moteurRef.current;
     const entry = { ...fournisseur, id: fournisseur.id || genId() };
-    const updated = { ...moteur, referentielFournisseurs: [...moteur.referentielFournisseurs, entry] };
-    await persist(updated);
-  }, [moteur, persist]);
+    await persist({ ...cur, referentielFournisseurs: [...cur.referentielFournisseurs, entry] });
+  }, [persist]);
 
   const updateFournisseur = useCallback(async (id, patch) => {
-    const updated = {
-      ...moteur,
-      referentielFournisseurs: moteur.referentielFournisseurs.map(f => f.id === id ? { ...f, ...patch } : f),
-    };
-    await persist(updated);
-  }, [moteur, persist]);
+    const cur = moteurRef.current;
+    await persist({ ...cur, referentielFournisseurs: cur.referentielFournisseurs.map(f => f.id === id ? { ...f, ...patch } : f) });
+  }, [persist]);
 
   const deleteFournisseur = useCallback(async (id) => {
-    const updated = { ...moteur, referentielFournisseurs: moteur.referentielFournisseurs.filter(f => f.id !== id) };
-    await persist(updated);
-  }, [moteur, persist]);
+    const cur = moteurRef.current;
+    await persist({ ...cur, referentielFournisseurs: cur.referentielFournisseurs.filter(f => f.id !== id) });
+  }, [persist]);
 
   // ── Règles multi-nature ─────────────────────────────────────────────────────
 
   const addRegleMultiNature = useCallback(async (regle) => {
-    const entry = { ...regle, id: regle.id || genId(), priority: regle.priority ?? (moteur.reglesMultiNature.length + 1) * 10 };
-    const updated = { ...moteur, reglesMultiNature: [...moteur.reglesMultiNature, entry] };
-    await persist(updated);
-  }, [moteur, persist]);
+    const cur = moteurRef.current;
+    const entry = { ...regle, id: regle.id || genId(), priority: regle.priority ?? (cur.reglesMultiNature.length + 1) * 10 };
+    await persist({ ...cur, reglesMultiNature: [...cur.reglesMultiNature, entry] });
+  }, [persist]);
 
   const updateRegleMultiNature = useCallback(async (id, patch) => {
-    const updated = {
-      ...moteur,
-      reglesMultiNature: moteur.reglesMultiNature.map(r => r.id === id ? { ...r, ...patch } : r),
-    };
-    await persist(updated);
-  }, [moteur, persist]);
+    const cur = moteurRef.current;
+    await persist({ ...cur, reglesMultiNature: cur.reglesMultiNature.map(r => r.id === id ? { ...r, ...patch } : r) });
+  }, [persist]);
 
   const deleteRegleMultiNature = useCallback(async (id) => {
-    const updated = { ...moteur, reglesMultiNature: moteur.reglesMultiNature.filter(r => r.id !== id) };
-    await persist(updated);
-  }, [moteur, persist]);
+    const cur = moteurRef.current;
+    await persist({ ...cur, reglesMultiNature: cur.reglesMultiNature.filter(r => r.id !== id) });
+  }, [persist]);
 
   const reorderReglesMultiNature = useCallback(async (fromIndex, toIndex) => {
-    const arr = [...moteur.reglesMultiNature];
+    const cur = moteurRef.current;
+    const arr = [...cur.reglesMultiNature];
     const [moved] = arr.splice(fromIndex, 1);
     arr.splice(toIndex, 0, moved);
-    const reordered = arr.map((r, i) => ({ ...r, priority: (i + 1) * 10 }));
-    await persist({ ...moteur, reglesMultiNature: reordered });
-  }, [moteur, persist]);
+    await persist({ ...cur, reglesMultiNature: arr.map((r, i) => ({ ...r, priority: (i + 1) * 10 })) });
+  }, [persist]);
 
   // ── Règles mots-clés ────────────────────────────────────────────────────────
 
   const addRegleMosCles = useCallback(async (regle) => {
-    const entry = { ...regle, id: regle.id || genId(), priority: regle.priority ?? (moteur.reglesMosCles.length + 1) * 10 };
-    const updated = { ...moteur, reglesMosCles: [...moteur.reglesMosCles, entry] };
-    await persist(updated);
-  }, [moteur, persist]);
+    const cur = moteurRef.current;
+    const entry = { ...regle, id: regle.id || genId(), priority: regle.priority ?? (cur.reglesMosCles.length + 1) * 10 };
+    await persist({ ...cur, reglesMosCles: [...cur.reglesMosCles, entry] });
+  }, [persist]);
 
   const updateRegleMosCles = useCallback(async (id, patch) => {
-    const updated = {
-      ...moteur,
-      reglesMosCles: moteur.reglesMosCles.map(r => r.id === id ? { ...r, ...patch } : r),
-    };
-    await persist(updated);
-  }, [moteur, persist]);
+    const cur = moteurRef.current;
+    await persist({ ...cur, reglesMosCles: cur.reglesMosCles.map(r => r.id === id ? { ...r, ...patch } : r) });
+  }, [persist]);
 
   const deleteRegleMosCles = useCallback(async (id) => {
-    const updated = { ...moteur, reglesMosCles: moteur.reglesMosCles.filter(r => r.id !== id) };
-    await persist(updated);
-  }, [moteur, persist]);
+    const cur = moteurRef.current;
+    await persist({ ...cur, reglesMosCles: cur.reglesMosCles.filter(r => r.id !== id) });
+  }, [persist]);
 
   const reorderReglesMosCles = useCallback(async (fromIndex, toIndex) => {
-    const arr = [...moteur.reglesMosCles];
+    const cur = moteurRef.current;
+    const arr = [...cur.reglesMosCles];
     const [moved] = arr.splice(fromIndex, 1);
     arr.splice(toIndex, 0, moved);
-    const reordered = arr.map((r, i) => ({ ...r, priority: (i + 1) * 10 }));
-    await persist({ ...moteur, reglesMosCles: reordered });
-  }, [moteur, persist]);
+    await persist({ ...cur, reglesMosCles: arr.map((r, i) => ({ ...r, priority: (i + 1) * 10 })) });
+  }, [persist]);
 
   // ── Mapping comptes (pas d'ajout/suppression — uniquement mise à jour famille) ──
 
-  const updateMappingCompte = useCallback(async (compte, familleDefaut) => {
-    const updated = {
-      ...moteur,
-      mappingComptes: moteur.mappingComptes.map(m => m.compte === compte ? { ...m, familleDefaut } : m),
-    };
-    await persist(updated);
-  }, [moteur, persist]);
+  const updateMappingCompte = useCallback(async (compte, familleDefaut, libelleCompte) => {
+    const cur = moteurRef.current;
+    const target = normalizeCompte(compte);
+    if (!target) return;
+    const exists = cur.mappingComptes.some(mp => normalizeCompte(mp.compte) === target);
+    const mappingComptes = exists
+      ? cur.mappingComptes.map(mp => normalizeCompte(mp.compte) === target ? { ...mp, familleDefaut } : mp)
+      : [...cur.mappingComptes, { compte: target, familleDefaut, libelleCompte: libelleCompte || '' }];
+    await persist({ ...cur, mappingComptes });
+  }, [persist]);
+
+  // ── Nomenclature : catégories (familles) & sous-catégories ──────────────────
+  // Renommage/suppression cascadent sur les règles que le moteur possède. La
+  // cascade vers les fournisseurs/projets/EPRD est orchestrée côté App.
+
+  const addFamille = useCallback(async (nom) => {
+    const cur = moteurRef.current;
+    const f = String(nom || '').trim();
+    if (!f || (cur.nomenclature || []).some(n => n.famille === f)) return;
+    await persist({ ...cur, nomenclature: [...(cur.nomenclature || []), { famille: f, sousCategoriesDisponibles: [] }] });
+  }, [persist]);
+
+  const renameFamille = useCallback(async (oldName, newName) => {
+    const cur = moteurRef.current;
+    const nn = String(newName || '').trim();
+    if (!nn || nn === oldName) return;
+    const renF = (r) => r.famille === oldName ? { ...r, famille: nn } : r;
+    await persist({
+      ...cur,
+      nomenclature: (cur.nomenclature || []).map(n => n.famille === oldName ? { ...n, famille: nn } : n),
+      referentielFournisseurs: cur.referentielFournisseurs.map(renF),
+      reglesMultiNature: cur.reglesMultiNature.map(renF),
+      reglesMosCles: cur.reglesMosCles.map(renF),
+      mappingComptes: cur.mappingComptes.map(m => m.familleDefaut === oldName ? { ...m, familleDefaut: nn } : m),
+    });
+  }, [persist]);
+
+  const removeFamille = useCallback(async (nom, fallback = HORS_PERIMETRE_LABEL) => {
+    const cur = moteurRef.current;
+    const reF = (r) => r.famille === nom ? { ...r, famille: fallback } : r;
+    await persist({
+      ...cur,
+      nomenclature: (cur.nomenclature || []).filter(n => n.famille !== nom),
+      referentielFournisseurs: cur.referentielFournisseurs.map(reF),
+      reglesMultiNature: cur.reglesMultiNature.map(reF),
+      reglesMosCles: cur.reglesMosCles.map(reF),
+      mappingComptes: cur.mappingComptes.map(m => m.familleDefaut === nom ? { ...m, familleDefaut: fallback } : m),
+    });
+  }, [persist]);
+
+  const addSousCategorie = useCallback(async (famille, sousCat) => {
+    const cur = moteurRef.current;
+    const label = String((typeof sousCat === 'string' ? sousCat : sousCat?.label) || '').trim();
+    if (!label) return;
+    const nomenclature = (cur.nomenclature || []).map(n => {
+      if (n.famille !== famille) return n;
+      const list = n.sousCategoriesDisponibles || [];
+      if (list.some(s => (typeof s === 'string' ? s : s.label) === label)) return n;
+      const entry = typeof sousCat === 'string'
+        ? { label }
+        : { label, perimetre: sousCat.perimetre || '', description: sousCat.description || '' };
+      return { ...n, sousCategoriesDisponibles: [...list, entry] };
+    });
+    await persist({ ...cur, nomenclature });
+  }, [persist]);
+
+  const renameSousCategorie = useCallback(async (famille, oldLabel, newLabel) => {
+    const cur = moteurRef.current;
+    const nn = String(newLabel || '').trim();
+    if (!nn) return;
+    const nomenclature = (cur.nomenclature || []).map(n => n.famille !== famille ? n : {
+      ...n,
+      sousCategoriesDisponibles: (n.sousCategoriesDisponibles || []).map(s => {
+        const lbl = typeof s === 'string' ? s : s.label;
+        if (lbl !== oldLabel) return s;
+        return typeof s === 'string' ? nn : { ...s, label: nn };
+      }),
+    });
+    const renSc = (r) => (r.famille === famille && r.sousCategorie === oldLabel) ? { ...r, sousCategorie: nn } : r;
+    await persist({
+      ...cur, nomenclature,
+      referentielFournisseurs: cur.referentielFournisseurs.map(renSc),
+      reglesMultiNature: cur.reglesMultiNature.map(renSc),
+      reglesMosCles: cur.reglesMosCles.map(renSc),
+    });
+  }, [persist]);
+
+  const removeSousCategorie = useCallback(async (famille, label) => {
+    const cur = moteurRef.current;
+    const nomenclature = (cur.nomenclature || []).map(n => n.famille !== famille ? n : {
+      ...n,
+      sousCategoriesDisponibles: (n.sousCategoriesDisponibles || []).filter(s => (typeof s === 'string' ? s : s.label) !== label),
+    });
+    const clrSc = (r) => (r.famille === famille && r.sousCategorie === label) ? { ...r, sousCategorie: '' } : r;
+    await persist({
+      ...cur, nomenclature,
+      referentielFournisseurs: cur.referentielFournisseurs.map(clrSc),
+      reglesMultiNature: cur.reglesMultiNature.map(clrSc),
+      reglesMosCles: cur.reglesMosCles.map(clrSc),
+    });
+  }, [persist]);
 
   return {
     moteur,
@@ -221,5 +323,12 @@ export const useReclassementData = () => {
     reorderReglesMosCles,
     // Comptes
     updateMappingCompte,
+    // Nomenclature (catégories & sous-catégories)
+    addFamille,
+    renameFamille,
+    removeFamille,
+    addSousCategorie,
+    renameSousCategorie,
+    removeSousCategorie,
   };
 };

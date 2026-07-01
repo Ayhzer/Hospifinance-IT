@@ -4,7 +4,15 @@ Application React de pilotage financier pour la Direction des Systèmes d'Inform
 hospitalière : suivi OPEX/CAPEX, gestion des commandes, analyse multi-exercice,
 projection budgétaire et rapprochement comptable.
 
-**Version 1.0 · 2026**
+**Version 1.2 · 2026**
+
+> 🚀 **Au premier lancement, un assistant de paramétrage vous guide.** Aucune
+> configuration technique n'est nécessaire pour démarrer : dès le tout premier démarrage
+> d'une installation neuve, un **assistant s'affiche automatiquement** et vous permet de
+> tout régler **sans toucher au code** — identité de l'établissement, libellés des
+> logiciels sources, mode de stockage des données (base locale ou synchronisation GitHub)
+> et mot de passe administrateur. Les choix sont appliqués immédiatement ; l'assistant ne
+> réapparaît plus ensuite.
 
 > **Version générique et réutilisable.** Hospifinance-IT est conçu pour être adapté
 > à **n'importe quel établissement** et à **n'importe quel logiciel source**. Tout le
@@ -15,6 +23,20 @@ projection budgétaire et rapprochement comptable.
 ---
 
 ## Adapter l'application à votre établissement
+
+### Le plus simple : l'assistant de premier lancement
+
+Au **tout premier démarrage** d'une installation autonome (`npm run dev`), un
+**assistant de configuration** s'affiche automatiquement et permet de tout régler
+sans toucher au code : identité de l'établissement, libellés des logiciels sources,
+mode de stockage (base locale ou synchronisation GitHub) et mot de passe
+administrateur. Les choix sont enregistrés et appliqués immédiatement (la page se
+recharge une fois). L'assistant ne réapparaît plus ensuite.
+
+> L'assistant est ignoré lorsqu'un backend est déjà configuré par variables
+> d'environnement (mode API ou GitHub) ou si des données existent déjà.
+
+### Manuellement (ou pour modifier les valeurs par défaut au build)
 
 Tout se configure dans **`src/config/`** :
 
@@ -47,20 +69,31 @@ Parcours utilisateur :
 4. Réimportez le fichier : classification OPEX/CAPEX, regroupement par fournisseur et
    reclassement analytique sont automatiques.
 
+### Mise à jour automatique (optionnelle)
+
+En **mode serveur local** (`npm start`), l'application peut **surveiller un fichier source**
+et proposer sa mise à jour au lancement. Dans **Paramètres → Source automatique**, indiquez
+le chemin du dossier (ou fichier) et le nom de fichier attendu : dès qu'une version plus
+récente est détectée, une fenêtre propose de réimporter les données en un clic (via le même
+modèle canonique).
+
 ---
 
 ## Fonctionnalités
 
 - **Pilotage budgétaire** — sélecteur d'exercice, atterrissage, KPIs, treemap, pipeline de commandes, comparaison N/N-1/N-2, rapport exécutif PDF.
+- **Budget unifié** — bouton « Renseigner le budget » ouvrant un éditeur à deux onglets : **OPEX** (EPRD par compte) et **CAPEX** (budget global par exercice + par enveloppe, avec contrôle d'équilibre).
 - **OPEX / CAPEX** — fournisseurs, projets et commandes (6 statuts avec impact budgétaire automatique).
 - **Modules analytiques** — vue analytique (drill-down), par comptes vs EPRD, matrice Familles × Comptes, anomalies, analyse par éditeur, **rapprochement Commandes / Comptabilité**, projection fin d'année, reclassement analytique.
-- **Administration** — authentification multi-rôles (superadmin / admin / user), référentiels paramétrables, colonnes personnalisables, seuils d'alerte, tableaux de bord personnalisés, synchronisation GitHub optionnelle, journal d'audit.
+- **Reclassement & nomenclature** — nomenclature analytique **éditable** (familles / sous-catégories, périmètre Run/Build), règles par fournisseur, nature ou mot-clé, avec **aperçu des commandes concernées** et application en masse.
+- **Import automatique** — surveillance d'un fichier source et mise à jour proposée au lancement (mode serveur local).
+- **Administration** — authentification **optionnelle** multi-rôles (superadmin / admin / user), référentiels paramétrables, colonnes personnalisables, seuils d'alerte, tableaux de bord personnalisés, synchronisation GitHub optionnelle, journal d'audit.
 
 ---
 
 ## Installation locale
 
-**Prérequis** : Node.js ≥ 16, npm
+**Prérequis** : Node.js ≥ 18, npm
 
 ```bash
 git clone https://github.com/Ayhzer/Hospifinance-IT.git
@@ -75,11 +108,17 @@ Mode API (données servies depuis le dépôt `hospifinance-it-data`) :
 npm start            # Frontend + serveur API local (port 3001)
 ```
 
-Sous Windows, le script `START-HOSPIFINANCE-IT.bat` lance les deux serveurs.
+Sous Windows :
+- `START-HOSPIFINANCE-IT.bat` lance les deux serveurs (frontend + API locale) ;
+- `START_IT.bat` lance le frontend seul sur le **port 5174** (mode localStorage, sans
+  conflit de port avec Hospifinance HFAR).
 
 ### Première connexion (démo)
 
 Identifiants par défaut : **admin** / **Admin2024!** — à changer immédiatement.
+
+> L'authentification est **optionnelle** : elle peut être désactivée dans
+> **Paramètres → Sécurité** (accès direct en administrateur, pour un poste de confiance).
 
 ---
 
@@ -118,6 +157,32 @@ Le dépôt `hospifinance-it-data` fourni contient un **jeu de démonstration fic
 entièrement versionné. **Pour des données réelles**, créez un dépôt **privé** dédié et
 excluez-y les extractions opérationnelles (`data/opex.json`, `data/capex.json`,
 `data/opex-orders.json`, `data/capex-orders.json`).
+
+---
+
+## Sécurité
+
+- **Changez les mots de passe par défaut** (`admin` / `user`) dès la mise en service, et
+  n'exposez jamais des données réelles dans un dépôt public.
+- **⚠️ Mots de passe — à durcir avant tout déploiement réseau.** Dans le mode navigateur /
+  localStorage, les mots de passe sont actuellement **encodés en base64** (réversible), et
+  non hachés. C'est acceptable pour une démo locale mono-poste, **mais insuffisant dès que
+  l'application est accessible sur un réseau**. Recommandation pour une mise en production
+  réseau : brancher le **backend Express/MongoDB** (dossier `backend/`) et y implémenter un
+  **hachage salé** (par ex. `bcrypt`/`argon2`) côté serveur, avec transport **HTTPS** — cf.
+  la section « Sécurité » de `backend/README.md`.
+- L'**authentification peut être désactivée** (Paramètres → Sécurité) : ne le faites que
+  sur un **poste de confiance**, jamais sur un déploiement partagé.
+
+---
+
+## Documentation
+
+- [GUIDE_PREMIERS_PAS.md](GUIDE_PREMIERS_PAS.md) — prise en main rapide en 6 étapes.
+- [GUIDE_UTILISATION.md](GUIDE_UTILISATION.md) — **manuel complet** d'utilisation et
+  d'administration (tous les modules, cas d'usage, FAQ).
+- [CHANGELOG.md](CHANGELOG.md) — historique des versions.
+- [backend/README.md](backend/README.md) — API Express/MongoDB optionnelle.
 
 ---
 
