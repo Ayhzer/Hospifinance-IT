@@ -6,6 +6,14 @@ projection budgétaire et rapprochement comptable.
 
 **Version 1.2 · 2026**
 
+> 🚀 **Au premier lancement, un assistant de paramétrage vous guide.** Aucune
+> configuration technique n'est nécessaire pour démarrer : dès le tout premier démarrage
+> d'une installation neuve, un **assistant s'affiche automatiquement** et vous permet de
+> tout régler **sans toucher au code** — identité de l'établissement, libellés des
+> logiciels sources, mode de stockage des données (base locale ou synchronisation GitHub)
+> et mot de passe administrateur. Les choix sont appliqués immédiatement ; l'assistant ne
+> réapparaît plus ensuite.
+
 > **Version générique et réutilisable.** Hospifinance-IT est conçu pour être adapté
 > à **n'importe quel établissement** et à **n'importe quel logiciel source**. Tout le
 > spécifique (nom de l'établissement, plan comptable, logiciels métier, budgets) est
@@ -165,6 +173,16 @@ excluez-y les extractions opérationnelles (`data/opex.json`, `data/capex.json`,
   la section « Sécurité » de `backend/README.md`.
 - L'**authentification peut être désactivée** (Paramètres → Sécurité) : ne le faites que
   sur un **poste de confiance**, jamais sur un déploiement partagé.
+
+---
+
+## Documentation
+
+- [GUIDE_PREMIERS_PAS.md](GUIDE_PREMIERS_PAS.md) — prise en main rapide en 6 étapes.
+- [GUIDE_UTILISATION.md](GUIDE_UTILISATION.md) — **manuel complet** d'utilisation et
+  d'administration (tous les modules, cas d'usage, FAQ).
+- [CHANGELOG.md](CHANGELOG.md) — historique des versions.
+- [backend/README.md](backend/README.md) — API Express/MongoDB optionnelle.
 
 ---
 
